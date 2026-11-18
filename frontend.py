@@ -1,871 +1,1676 @@
 from __future__ import annotations
 
-import importlib
 import tkinter as tk
 from tkinter import messagebox
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import customtkinter as ctk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
-try:
-    from matplotlib.figure import Figure
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    MATPLOTLIB_AVAILABLE = True
-except Exception:
-    MATPLOTLIB_AVAILABLE = False
+import backend
 
 
-# ───────────────────────────── DESIGN SYSTEM ──────────────────────────────
+# ============================================================
+# THEME AND CONFIGURATION
+# ============================================================
 
-APP_NAME = "AlgoTrack"
-BACKEND_MODULE = "database"
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
-C = {
-    "bg": "#090A0F",
-    "sidebar": "#101117",
-    "panel": "#12141D",
-    "panel_2": "#171A25",
-    "panel_3": "#202333",
-    "border": "#272A37",
-    "green": "#8058F5",
-    "green_hover": "#A18AFF",
-    "mint": "#C4B6FF",
-    "sage": "#9297AA",
-    "text": "#F2F3FA",
-    "muted": "#9297AA",
-    "dim": "#666D82",
-    "red": "#ED7184",
-    "amber": "#E5B65B",
-    "blue": "#27C4E7",
+APP_TITLE = "AlgoTrack"
+WINDOW_SIZE = "1440x900"
+
+COLORS = {
+    "background": "#0B1120",
+    "sidebar": "#101827",
+    "surface": "#151F30",
+    "surface_2": "#1B2940",
+    "border": "#26364F",
+    "text": "#F1F5F9",
+    "muted": "#94A3B8",
+    "blue": "#60A5FA",
+    "blue_dark": "#2563EB",
+    "green": "#34D399",
+    "yellow": "#FBBF24",
+    "red": "#FB7185",
+    "purple": "#A78BFA",
+    "cyan": "#22D3EE",
 }
 
 FONT = "Segoe UI"
-MONO = "Consolas"
-
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("green")
 
 
-# ───────────────────────────── BACKEND ADAPTER ────────────────────────────
+# ============================================================
+# SMALL REUSABLE UI COMPONENTS
+# ============================================================
 
-class BackendAdapter:
-    """Keep database-specific details in one place."""
+class StatCard(ctk.CTkFrame):
+    """Compact dashboard metric card."""
 
-    def __init__(self):
-        self.db = importlib.import_module(BACKEND_MODULE)
-        if hasattr(self.db, "create_table"):
-            self.db.create_table()
+    def __init__(
+        self,
+        master,
+        title: str,
+        value: str = "0",
+        subtitle: str = "",
+        accent: str = COLORS["blue"],
+    ):
+        super().__init__(
+            master,
+            fg_color=COLORS["surface"],
+            corner_radius=14,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
 
-    def call(self, name: str, *args, default=None, **kwargs):
-        fn = getattr(self.db, name, None)
-        if not callable(fn):
-            return default
-        try:
-            result = fn(*args, **kwargs)
-            return default if result is None and default is not None else result
-        except Exception as exc:
-            print(f"[AlgoTrack backend] {name}: {exc}")
-            return default
+        self.grid_columnconfigure(0, weight=1)
 
-    def stats(self):
-        return self.call("get_dashboard_stats", default={}) or {}
+        ctk.CTkLabel(
+            self,
+            text=title.upper(),
+            font=ctk.CTkFont(FONT, 11, "bold"),
+            text_color=COLORS["muted"],
+        ).grid(row=0, column=0, sticky="w", padx=17, pady=(15, 4))
 
-    def problems(self):
-        return self.call("get_all_problems", default=[]) or []
+        self.value_label = ctk.CTkLabel(
+            self,
+            text=value,
+            font=ctk.CTkFont(FONT, 29, "bold"),
+            text_color=accent,
+        )
+        self.value_label.grid(row=1, column=0, sticky="w", padx=17)
 
-    def streak(self):
-        return self.call("get_streak", default=0) or 0
+        self.subtitle_label = ctk.CTkLabel(
+            self,
+            text=subtitle,
+            font=ctk.CTkFont(FONT, 11),
+            text_color=COLORS["muted"],
+        )
+        self.subtitle_label.grid(
+            row=2, column=0, sticky="w", padx=17, pady=(2, 15)
+        )
 
-    def today_count(self):
-        return self.call("get_todays_count", default=0) or 0
-
-    def weekly(self):
-        return self.call("get_weekly_progress", default=[]) or []
-
-    def add(self, name, topic, difficulty, status, link, pattern, notes):
-        fn = getattr(self.db, "add_problem", None)
-        if not callable(fn):
-            raise AttributeError("backend.add_problem() was not found.")
-        # database.py signature:
-        # add_problem(problem_name, problem_link, topic, difficulty, status, pattern, notes)
-        return fn(name, link, topic, difficulty, status, pattern, notes)
-
-    def update_status(self, problem_id, status):
-        fn = getattr(self.db, "update_status", None)
-        if not callable(fn):
-            raise AttributeError("backend.update_status() was not found.")
-        return fn(problem_id, status)
-
-    def delete(self, problem_id):
-        fn = getattr(self.db, "delete_problem", None)
-        if not callable(fn):
-            raise AttributeError("backend.delete_problem() was not found.")
-        return fn(problem_id)
-
-    def topic_stats(self):
-        return self.call("stats_by_topic", default=[]) or []
-
-    def difficulty_stats(self):
-        return self.call("stats_by_difficulty", default=[]) or []
-
-    def last_30(self):
-        return self.call("get_last_30_days_data", default=[]) or []
-
-    def insights(self):
-        return self.call("get_insights", default=[]) or []
-
-    def recommendation(self):
-        return self.call("get_weekly_recommendation", default="Keep showing up.") or "Keep showing up."
+    def set_values(self, value: Any, subtitle: str | None = None):
+        self.value_label.configure(text=str(value))
+        if subtitle is not None:
+            self.subtitle_label.configure(text=subtitle)
 
 
-# ───────────────────────────── SMALL HELPERS ──────────────────────────────
+class SectionHeader(ctk.CTkFrame):
+    def __init__(self, master, title: str, description: str = ""):
+        super().__init__(master, fg_color="transparent")
 
-def value(obj: Any, *keys, default=""):
-    """Read a field from either a dict or sqlite Row."""
-    for key in keys:
-        try:
-            result = obj[key] if isinstance(obj, dict) else getattr(obj, key)
-            if result is not None:
-                return result
-        except (KeyError, IndexError, TypeError, AttributeError):
-            pass
-    return default
+        ctk.CTkLabel(
+            self,
+            text=title,
+            font=ctk.CTkFont(FONT, 25, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w")
 
-
-def safe_int(x, default=0):
-    try:
-        return int(x or 0)
-    except (TypeError, ValueError):
-        return default
-
-
-def normalize_status(s):
-    s = str(s or "Todo").strip().lower()
-    if s in {"solved", "done", "completed"}:
-        return "Solved"
-    if s in {"revision", "revise", "review"}:
-        return "Revision"
-    return "Todo"
+        if description:
+            ctk.CTkLabel(
+                self,
+                text=description,
+                font=ctk.CTkFont(FONT, 12),
+                text_color=COLORS["muted"],
+            ).pack(anchor="w", pady=(4, 0))
 
 
-def normalize_difficulty(s):
-    s = str(s or "Medium").strip().title()
-    return s if s in {"Easy", "Medium", "Hard"} else "Medium"
-
-
-def card(parent, **kwargs):
-    return ctk.CTkFrame(
-        parent, fg_color=kwargs.get("fg_color", C["panel"]),
-        corner_radius=kwargs.get("corner_radius", 16),
-        border_width=kwargs.get("border_width", 1),
-        border_color=kwargs.get("border_color", C["border"]),
-    )
-
-
-# ───────────────────────────── MAIN APPLICATION ───────────────────────────
+# ============================================================
+# MAIN APPLICATION
+# ============================================================
 
 class AlgoTrackApp(ctk.CTk):
+
     def __init__(self):
         super().__init__()
-        self.title("AlgoTrack — Your DSA Operating System")
-        self.geometry("1440x900")
-        self.minsize(1120, 720)
-        self.configure(fg_color=C["bg"])
+
+        self.title(APP_TITLE)
+        self.geometry(WINDOW_SIZE)
+        self.minsize(1100, 720)
+        self.configure(fg_color=COLORS["background"])
+
+        self.current_page = "Dashboard"
+        self.problem_rows: list[dict[str, Any]] = []
+        self._chart_canvases = []
 
         try:
-            self.db = BackendAdapter()
-        except Exception as exc:
+            backend.initialize_database()
+        except Exception as error:
             messagebox.showerror(
-                "Backend connection failed",
-                f"Could not import '{BACKEND_MODULE}'.\n\n{exc}\n\n"
-                "Place backend.py beside this file, or change BACKEND_MODULE at the top."
+                "Database error",
+                f"AlgoTrack could not initialize its database:\n\n{error}",
             )
             self.destroy()
             return
 
-        self.current_page = "Dashboard"
-        self.all_problems = []
-        self.filtered_problems = []
-        self.nav_buttons = {}
-        self._build_shell()
-        self.show_page("Dashboard")
-        self.refresh_data()
-
-    def _build_shell(self):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self.sidebar = ctk.CTkFrame(
-            self, width=238, fg_color=C["sidebar"], corner_radius=0,
-            border_width=0
+        self._build_sidebar()
+
+        self.content = ctk.CTkFrame(
+            self,
+            fg_color=COLORS["background"],
+            corner_radius=0,
         )
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_propagate(False)
-        self.sidebar.grid_rowconfigure(8, weight=1)
-
-        brand = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        brand.pack(fill="x", padx=22, pady=(28, 30))
-        mark = ctk.CTkFrame(brand, width=42, height=42, corner_radius=13, fg_color="#382A89")
-        mark.pack(side="left")
-        mark.pack_propagate(False)
-        ctk.CTkLabel(mark, text="A", font=(FONT, 23, "bold"), text_color=C["green"]).place(relx=.5, rely=.48, anchor="center")
-        brand_text = ctk.CTkFrame(brand, fg_color="transparent")
-        brand_text.pack(side="left", padx=11)
-        ctk.CTkLabel(brand_text, text="ALGOTRACK", font=(FONT, 17, "bold"), text_color=C["text"]).pack(anchor="w")
-        ctk.CTkLabel(brand_text, text="DSA WORKSPACE", font=(FONT, 9, "bold"), text_color=C["dim"]).pack(anchor="w", pady=(1, 0))
-
-        ctk.CTkLabel(self.sidebar, text="WORKSPACE", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=24, pady=(0, 10))
-
-        nav_items = [
-            ("Dashboard", "◫"),
-            ("Problems", "▤"),
-            ("Focus mode", "◎"),
-            ("Revision room", "↻"),
-            ("Analytics", "⌁"),
-        ]
-        for label, symbol in nav_items:
-            self._nav_item(label, symbol)
-
-        ctk.CTkFrame(self.sidebar, height=1, fg_color=C["border"]).pack(fill="x", padx=20, pady=20)
-        ctk.CTkLabel(self.sidebar, text="YOUR SYSTEM", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=24, pady=(0, 10))
-        self._nav_item("Settings", "⚙")
-
-        self.sidebar_footer = ctk.CTkFrame(self.sidebar, fg_color=C["panel"], corner_radius=14)
-        self.sidebar_footer.pack(side="bottom", fill="x", padx=15, pady=17)
-        ctk.CTkLabel(self.sidebar_footer, text="BUILT FOR CONSISTENCY",
-                     font=(FONT, 9, "bold"), text_color=C["dim"]).pack(anchor="w", padx=13, pady=(12, 4))
-        ctk.CTkLabel(self.sidebar_footer, text="One problem at a time.",
-                     font=(FONT, 12), text_color=C["mint"]).pack(anchor="w", padx=13, pady=(0, 12))
-
-        self.main = ctk.CTkFrame(self, fg_color=C["bg"], corner_radius=0)
-        self.main.grid(row=0, column=1, sticky="nsew")
-        self.main.grid_rowconfigure(1, weight=1)
-        self.main.grid_columnconfigure(0, weight=1)
-
-        self.topbar = ctk.CTkFrame(self.main, fg_color=C["bg"], corner_radius=0, height=76)
-        self.topbar.grid(row=0, column=0, sticky="ew", padx=32)
-        self.topbar.grid_columnconfigure(0, weight=1)
-        self.page_title = ctk.CTkLabel(self.topbar, text="Dashboard",
-                                       font=(FONT, 23, "bold"), text_color=C["text"])
-        self.page_title.grid(row=0, column=0, sticky="w", pady=(22, 0))
-        self.topbar_right = ctk.CTkFrame(self.topbar, fg_color="transparent")
-        self.topbar_right.grid(row=0, column=1, sticky="e", pady=(20, 0))
-        self.date_label = ctk.CTkLabel(
-            self.topbar_right, text=datetime.now().strftime("%A, %d %B"),
-            font=(FONT, 11), text_color=C["muted"]
+        self.content.grid(
+            row=0, column=1, sticky="nsew", padx=0, pady=0
         )
-        self.date_label.pack(side="left", padx=(0, 15))
-        ctk.CTkButton(self.topbar_right, text="+ Add problem", width=132, height=37,
-                      corner_radius=10, fg_color=C["green"], hover_color=C["green_hover"],
-                      text_color="#FFFFFF", font=(FONT, 12, "bold"),
-                      command=lambda: self.show_page("Problems", open_add=True)).pack(side="left")
-
-        self.content = ctk.CTkFrame(self.main, fg_color=C["bg"], corner_radius=0)
-        self.content.grid(row=1, column=0, sticky="nsew", padx=32, pady=(8, 24))
         self.content.grid_columnconfigure(0, weight=1)
         self.content.grid_rowconfigure(0, weight=1)
 
-    def _nav_item(self, label, symbol):
-        btn = ctk.CTkButton(
-            self.sidebar, text=f"  {symbol}     {label}", anchor="w",
-            height=43, corner_radius=10, fg_color="transparent",
-            hover_color=C["panel_2"], text_color=C["muted"],
-            font=(FONT, 12), command=lambda name=label: self.show_page(name)
-        )
-        btn.pack(fill="x", padx=13, pady=3)
-        self.nav_buttons[label] = btn
+        self.show_dashboard()
 
-    def _set_active_nav(self, page):
-        for label, btn in self.nav_buttons.items():
-            active = label == page
-            btn.configure(
-                fg_color="#292044" if active else "transparent",
-                text_color=C["green"] if active else C["muted"],
-                font=(FONT, 12, "bold" if active else "normal")
+    # --------------------------------------------------------
+    # SIDEBAR
+    # --------------------------------------------------------
+
+    def _build_sidebar(self):
+        sidebar = ctk.CTkFrame(
+            self,
+            width=235,
+            corner_radius=0,
+            fg_color=COLORS["sidebar"],
+            border_width=0,
+        )
+        sidebar.grid(row=0, column=0, sticky="nsew")
+        sidebar.grid_propagate(False)
+        sidebar.grid_rowconfigure(8, weight=1)
+
+        brand = ctk.CTkFrame(sidebar, fg_color="transparent")
+        brand.pack(fill="x", padx=20, pady=(27, 30))
+
+        ctk.CTkLabel(
+            brand,
+            text="◈",
+            font=ctk.CTkFont(FONT, 28, "bold"),
+            text_color=COLORS["blue"],
+        ).pack(side="left")
+
+        brand_text = ctk.CTkFrame(brand, fg_color="transparent")
+        brand_text.pack(side="left", padx=(9, 0))
+
+        ctk.CTkLabel(
+            brand_text,
+            text="AlgoTrack",
+            font=ctk.CTkFont(FONT, 20, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            brand_text,
+            text="YOUR DSA WORKSPACE",
+            font=ctk.CTkFont(FONT, 9, "bold"),
+            text_color=COLORS["muted"],
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            sidebar,
+            text="WORKSPACE",
+            font=ctk.CTkFont(FONT, 10, "bold"),
+            text_color="#64748B",
+        ).pack(anchor="w", padx=22, pady=(0, 9))
+
+        self.nav_buttons = {}
+
+        navigation = [
+            ("Dashboard", "⌂", self.show_dashboard),
+            ("Problems", "▤", self.show_problems),
+            ("Analytics", "◫", self.show_analytics),
+            ("Revisions", "↻", self.show_revisions),
+            ("Goals", "◎", self.show_goals),
+        ]
+
+        for label, symbol, command in navigation:
+            button = ctk.CTkButton(
+                sidebar,
+                text=f"  {symbol}     {label}",
+                anchor="w",
+                height=43,
+                corner_radius=9,
+                fg_color="transparent",
+                hover_color=COLORS["surface_2"],
+                text_color=COLORS["muted"],
+                font=ctk.CTkFont(FONT, 13, "bold"),
+                command=command,
             )
+            button.pack(fill="x", padx=13, pady=3)
+            self.nav_buttons[label] = button
+
+        footer = ctk.CTkFrame(
+            sidebar,
+            fg_color=COLORS["surface"],
+            corner_radius=12,
+        )
+        footer.pack(side="bottom", fill="x", padx=13, pady=17)
+
+        ctk.CTkLabel(
+            footer,
+            text="BUILD CONSISTENCY",
+            font=ctk.CTkFont(FONT, 10, "bold"),
+            text_color=COLORS["muted"],
+        ).pack(anchor="w", padx=13, pady=(12, 3))
+
+        self.sidebar_streak = ctk.CTkLabel(
+            footer,
+            text="🔥 0 day streak",
+            font=ctk.CTkFont(FONT, 14, "bold"),
+            text_color=COLORS["text"],
+        )
+        self.sidebar_streak.pack(anchor="w", padx=13, pady=(0, 12))
+
+    def _set_active_nav(self, page: str):
+        for name, button in self.nav_buttons.items():
+            if name == page:
+                button.configure(
+                    fg_color=COLORS["blue_dark"],
+                    text_color="#FFFFFF",
+                )
+            else:
+                button.configure(
+                    fg_color="transparent",
+                    text_color=COLORS["muted"],
+                )
+
+        self.current_page = page
+
+    # --------------------------------------------------------
+    # PAGE UTILITIES
+    # --------------------------------------------------------
 
     def _clear_content(self):
         for widget in self.content.winfo_children():
             widget.destroy()
+        self._chart_canvases.clear()
 
-    def show_page(self, page, open_add=False):
-        self.current_page = page
-        self.page_title.configure(text=page)
-        self._set_active_nav(page)
+    def _page_container(self):
+        container = ctk.CTkScrollableFrame(
+            self.content,
+            fg_color=COLORS["background"],
+            corner_radius=0,
+        )
+        container.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+        container.grid_columnconfigure(0, weight=1)
+        return container
+
+    def _page_topbar(self, parent, page_title: str):
+        top = ctk.CTkFrame(parent, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", padx=30, pady=(24, 12))
+        top.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            top,
+            text=page_title,
+            font=ctk.CTkFont(FONT, 13, "bold"),
+            text_color=COLORS["muted"],
+        ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkLabel(
+            top,
+            text=date.today().strftime("%A, %d %B %Y"),
+            font=ctk.CTkFont(FONT, 11),
+            text_color=COLORS["muted"],
+        ).grid(row=0, column=1, sticky="e")
+
+    def _panel(self, parent, title: str, row: int, column: int,
+               columnspan: int = 1):
+        panel = ctk.CTkFrame(
+            parent,
+            fg_color=COLORS["surface"],
+            corner_radius=14,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        panel.grid(
+            row=row,
+            column=column,
+            columnspan=columnspan,
+            sticky="nsew",
+            padx=7,
+            pady=7,
+        )
+
+        ctk.CTkLabel(
+            panel,
+            text=title,
+            font=ctk.CTkFont(FONT, 14, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w", padx=17, pady=(15, 7))
+
+        return panel
+
+    def _show_error(self, title: str, error: Exception):
+        messagebox.showerror(title, str(error))
+
+    def _refresh_sidebar(self):
+        try:
+            self.sidebar_streak.configure(
+                text=f"🔥 {backend.get_streak()} day streak"
+            )
+        except Exception:
+            self.sidebar_streak.configure(text="🔥 0 day streak")
+
+    # ========================================================
+    # DASHBOARD
+    # ========================================================
+
+    def show_dashboard(self):
+        self._set_active_nav("Dashboard")
         self._clear_content()
-        if page == "Dashboard":
-            self._dashboard()
-        elif page == "Problems":
-            self._problems_page()
-            if open_add:
-                self._add_problem_dialog()
-        elif page == "Focus mode":
-            self._focus_page()
-        elif page == "Revision room":
-            self._revision_page()
-        elif page == "Analytics":
-            self._analytics_page()
-        else:
-            self._settings_page()
 
-    def refresh_data(self):
-        self.all_problems = list(self.db.problems())
-        self._refresh_current()
+        page = self._page_container()
+        self._page_topbar(page, "OVERVIEW")
 
-    def _refresh_current(self):
-        page = self.current_page
-        self.show_page(page)
+        header = ctk.CTkFrame(page, fg_color="transparent")
+        header.grid(row=1, column=0, sticky="ew", padx=30, pady=(7, 17))
+        header.grid_columnconfigure(0, weight=1)
 
-    # ───────────────────────────── DASHBOARD ──────────────────────────────
+        ctk.CTkLabel(
+            header,
+            text="Your progress, in focus.",
+            font=ctk.CTkFont(FONT, 27, "bold"),
+            text_color=COLORS["text"],
+        ).grid(row=0, column=0, sticky="w")
 
-    def _dashboard(self):
-        wrap = ctk.CTkScrollableFrame(self.content, fg_color="transparent",
-                                      scrollbar_button_color=C["panel_3"])
-        wrap.grid(row=0, column=0, sticky="nsew")
-        wrap.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        ctk.CTkLabel(
+            header,
+            text="Track your consistency. Identify gaps. Keep improving.",
+            font=ctk.CTkFont(FONT, 12),
+            text_color=COLORS["muted"],
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        stats = self.db.stats()
-        solved = safe_int(stats.get("solved", 0))
-        total = safe_int(stats.get("total", len(self.all_problems)))
-        todo = safe_int(stats.get("todo", 0))
-        revision = safe_int(stats.get("revision", 0))
-        streak = safe_int(self.db.streak())
-        today = safe_int(self.db.today_count())
+        ctk.CTkButton(
+            header,
+            text="+ Add problem",
+            width=145,
+            height=38,
+            corner_radius=9,
+            fg_color=COLORS["blue_dark"],
+            hover_color="#1D4ED8",
+            command=self.open_add_problem,
+        ).grid(row=0, column=1, rowspan=2, sticky="e")
 
-        hero = ctk.CTkFrame(wrap, fg_color="#171728", corner_radius=20,
-                            border_width=1, border_color="#34305C")
-        hero.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 18))
-        hero.grid_columnconfigure(0, weight=1)
-        left = ctk.CTkFrame(hero, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="w", padx=25, pady=23)
-        ctk.CTkLabel(left, text="YOUR DAILY PRACTICE", font=(FONT, 10, "bold"),
-                     text_color="#BBAAFF").pack(anchor="w")
-        ctk.CTkLabel(left, text="Build the habit. Master the patterns.",
-                     font=(FONT, 23, "bold"), text_color=C["text"]).pack(anchor="w", pady=(8, 5))
-        ctk.CTkLabel(left, text="Your next breakthrough is one focused session away.",
-                     font=(FONT, 12), text_color=C["muted"]).pack(anchor="w")
-        right = ctk.CTkFrame(hero, fg_color="#211D3D", corner_radius=15)
-        right.grid(row=0, column=1, sticky="e", padx=25, pady=22)
-        ctk.CTkLabel(right, text="✦  CURRENT STREAK", font=(FONT, 9, "bold"),
-                     text_color="#BBAAFF").pack(padx=18, pady=(13, 2))
-        ctk.CTkLabel(right, text=f"{streak} days", font=(FONT, 27, "bold"),
-                     text_color=C["green"]).pack(padx=18)
-        ctk.CTkLabel(right, text="Consistency compounds.", font=(FONT, 10),
-                     text_color=C["sage"]).pack(padx=18, pady=(0, 13))
+        try:
+            stats = backend.get_dashboard_stats()
+            streak = backend.get_streak()
+            today_count = backend.get_todays_count()
+        except Exception as error:
+            self._show_error("Could not load dashboard", error)
+            return
 
-        metric_data = [
-            ("PROBLEMS SOLVED", solved, "Lifetime progress", C["green"]),
-            ("TOTAL TRACKED", total, "Your problem library", C["blue"]),
-            ("TO DO", todo, "Waiting in your queue", C["amber"]),
-            ("FOR REVISION", revision, "Reinforce your learning", "#C5A7E8"),
+        cards = ctk.CTkFrame(page, fg_color="transparent")
+        cards.grid(row=2, column=0, sticky="ew", padx=23, pady=2)
+
+        for column in range(4):
+            cards.grid_columnconfigure(column, weight=1, uniform="stat")
+
+        card_data = [
+            ("Total problems", stats["total"], "In your tracker", COLORS["blue"]),
+            ("Solved", stats["solved"], "Completed problems", COLORS["green"]),
+            ("To do", stats["todo"], "Waiting to be solved", COLORS["yellow"]),
+            ("Current streak", f"{streak} days", f"{today_count} solved today", COLORS["purple"]),
         ]
-        for i, (label, number, sub, accent) in enumerate(metric_data):
-            self._metric_card(wrap, i, label, number, sub, accent)
 
-        section = ctk.CTkFrame(wrap, fg_color="transparent")
-        section.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(22, 9))
-        ctk.CTkLabel(section, text="Your momentum", font=(FONT, 17, "bold"),
-                     text_color=C["text"]).pack(side="left")
-        ctk.CTkLabel(section, text="A quick look at your consistency",
-                     font=(FONT, 10), text_color=C["dim"]).pack(side="left", padx=12, pady=(4, 0))
+        for index, (title, value, subtitle, accent) in enumerate(card_data):
+            card = StatCard(cards, title, value, subtitle, accent)
+            card.grid(
+                row=0, column=index, sticky="ew", padx=7, pady=7
+            )
 
-        progress_card = card(wrap)
-        progress_card.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=(0, 8), pady=(0, 12))
-        ctk.CTkLabel(progress_card, text="TODAY'S SESSION", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=18, pady=(17, 8))
-        ctk.CTkLabel(progress_card, text=f"{today} problems solved today",
-                     font=(FONT, 19, "bold"), text_color=C["text"]).pack(anchor="w", padx=18)
-        target = 3
-        pct = min(today / target, 1) if target else 0
-        bar = ctk.CTkProgressBar(progress_card, height=9, corner_radius=8,
-                                 fg_color="#272A37", progress_color=C["green"])
-        bar.pack(fill="x", padx=18, pady=(16, 7))
-        bar.set(pct)
-        ctk.CTkLabel(progress_card, text=f"{today} of {target} daily target  ·  {int(pct*100)}%",
-                     font=(FONT, 10), text_color=C["muted"]).pack(anchor="w", padx=18, pady=(0, 17))
+        # Main charts row.
+        charts = ctk.CTkFrame(page, fg_color="transparent")
+        charts.grid(row=3, column=0, sticky="ew", padx=23, pady=5)
+        charts.grid_columnconfigure((0, 1), weight=1, uniform="chart")
 
-        weekly_card = card(wrap)
-        weekly_card.grid(row=3, column=2, columnspan=2, sticky="nsew", padx=(8, 0), pady=(0, 12))
-        ctk.CTkLabel(weekly_card, text="WEEKLY ACTIVITY", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=18, pady=(17, 8))
-        self._draw_weekly(weekly_card)
+        activity_panel = self._panel(
+            charts, "30-day solving activity", 0, 0
+        )
+        topic_panel = self._panel(
+            charts, "Solved problems by topic", 0, 1
+        )
 
-        bottom_left = card(wrap)
-        bottom_left.grid(row=4, column=0, columnspan=2, sticky="nsew", padx=(0, 8), pady=(0, 12))
-        ctk.CTkLabel(bottom_left, text="RECENT PROBLEMS", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=18, pady=(16, 9))
-        recent = sorted(self.all_problems, key=lambda p: str(value(p, "date_solved", default="")), reverse=True)[:5]
-        if not recent:
-            self._empty(bottom_left, "Your problem journey starts here.", "Add your first problem to begin.")
-        else:
-            for p in recent:
-                self._problem_row(bottom_left, p, compact=True)
+        self._draw_activity_chart(activity_panel)
+        self._draw_topic_chart(topic_panel)
 
-        bottom_right = card(wrap)
-        bottom_right.grid(row=4, column=2, columnspan=2, sticky="nsew", padx=(8, 0), pady=(0, 12))
-        ctk.CTkLabel(bottom_right, text="A NOTE FOR THIS WEEK", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=18, pady=(16, 9))
-        recommendation = self.db.recommendation()
-        ctk.CTkLabel(bottom_right, text=str(recommendation), font=(FONT, 14),
-                     text_color=C["text"], wraplength=340, justify="left").pack(anchor="w", padx=18, pady=(3, 12))
-        ctk.CTkButton(bottom_right, text="Open problem library  →", height=34,
-                      fg_color=C["panel_3"], hover_color="#302A50", text_color=C["green"],
-                      command=lambda: self.show_page("Problems")).pack(anchor="w", padx=18, pady=(0, 16))
+        # Bottom row.
+        bottom = ctk.CTkFrame(page, fg_color="transparent")
+        bottom.grid(row=4, column=0, sticky="ew", padx=23, pady=(3, 20))
+        bottom.grid_columnconfigure((0, 1), weight=1, uniform="bottom")
 
-    def _metric_card(self, parent, col, label, number, sub, accent):
-        frame = card(parent)
-        frame.grid(row=1, column=col, sticky="ew", padx=(0 if col == 0 else 6, 6 if col < 3 else 0), pady=(0, 8))
-        ctk.CTkLabel(frame, text=label, font=(FONT, 9, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=15, pady=(14, 5))
-        ctk.CTkLabel(frame, text=str(number), font=(FONT, 27, "bold"),
-                     text_color=accent).pack(anchor="w", padx=15)
-        ctk.CTkLabel(frame, text=sub, font=(FONT, 10),
-                     text_color=C["muted"]).pack(anchor="w", padx=15, pady=(1, 14))
+        insight_panel = self._panel(
+            bottom, "Smart insights", 0, 0
+        )
+        recommendation_panel = self._panel(
+            bottom, "Next week's focus", 0, 1
+        )
 
-    def _draw_weekly(self, parent):
-        data = self.db.weekly()
-        if not MATPLOTLIB_AVAILABLE:
-            ctk.CTkLabel(parent, text=str(data), text_color=C["muted"]).pack(padx=18, pady=15)
-            return
-        fig = Figure(figsize=(4.5, 1.65), dpi=100, facecolor=C["panel"])
-        ax = fig.add_subplot(111)
-        ax.set_facecolor(C["panel"])
-        labels, values = self._series(data, ("day", "date", "label"), ("count", "solved", "total", "value"))
-        if not values:
-            labels, values = ["M", "T", "W", "T", "F", "S", "S"], [0] * 7
-        ax.bar(range(len(values)), values, color=C["green"], width=.52, alpha=.9)
-        ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels([str(x)[:3] for x in labels], color=C["sage"], fontsize=8)
-        ax.tick_params(axis="y", left=False, labelleft=False)
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        ax.grid(axis="y", color=C["border"], linewidth=.7)
-        ax.set_axisbelow(True)
-        fig.tight_layout(pad=1)
-        canvas = FigureCanvasTkAgg(fig, master=parent)
+        try:
+            insights = backend.get_insights()
+            recommendation = backend.get_weekly_recommendation()
+        except Exception as error:
+            insights = [f"Unable to generate insights: {error}"]
+            recommendation = "Try again after adding some problems."
+
+        for insight in insights:
+            ctk.CTkLabel(
+                insight_panel,
+                text=f"•  {insight}",
+                font=ctk.CTkFont(FONT, 12),
+                text_color=COLORS["muted"],
+                wraplength=440,
+                justify="left",
+            ).pack(anchor="w", padx=17, pady=5)
+
+        ctk.CTkLabel(
+            recommendation_panel,
+            text=recommendation,
+            font=ctk.CTkFont(FONT, 13),
+            text_color=COLORS["text"],
+            wraplength=420,
+            justify="left",
+        ).pack(anchor="w", padx=17, pady=(7, 18))
+
+        # Contribution calendar and goal progress.
+        activity_goals = ctk.CTkFrame(page, fg_color="transparent")
+        activity_goals.grid(
+            row=5, column=0, sticky="ew", padx=23, pady=(0, 20)
+        )
+        activity_goals.grid_columnconfigure((0, 1), weight=1, uniform="activity")
+
+        calendar_panel = self._panel(
+            activity_goals, "Contribution calendar — last 30 days", 0, 0
+        )
+        goals_panel = self._panel(
+            activity_goals, "Goal progress", 0, 1
+        )
+        self._render_contribution_calendar(calendar_panel)
+        self._render_goal_summary(goals_panel)
+
+        self._refresh_sidebar()
+
+    # ========================================================
+    # MATPLOTLIB CHART HELPERS
+    # ========================================================
+
+    def _create_figure(self, width=5.2, height=2.5):
+        figure = Figure(figsize=(width, height), dpi=95)
+        figure.patch.set_facecolor(COLORS["surface"])
+        axis = figure.add_subplot(111)
+        axis.set_facecolor(COLORS["surface"])
+
+        axis.tick_params(colors=COLORS["muted"], labelsize=8)
+
+        for spine in axis.spines.values():
+            spine.set_color(COLORS["border"])
+
+        axis.grid(
+            True,
+            axis="y",
+            color=COLORS["border"],
+            alpha=0.55,
+            linewidth=0.7,
+        )
+
+        return figure, axis
+
+    def _embed_figure(self, panel, figure):
+        canvas = FigureCanvasTkAgg(figure, master=panel)
         canvas.draw()
-        canvas.get_tk_widget().pack(fill="x", padx=10, pady=(0, 5))
+        canvas.get_tk_widget().pack(
+            fill="both", expand=True, padx=10, pady=(0, 10)
+        )
+        self._chart_canvases.append(canvas)
 
-    # ───────────────────────────── PROBLEMS ───────────────────────────────
+    def _draw_activity_chart(self, panel):
+        try:
+            data = backend.get_last_30_days_data()
+            labels = [
+                datetime.strptime(item[0], "%Y-%m-%d").strftime("%d")
+                for item in data
+            ]
+            values = [item[1] for item in data]
 
-    def _problems_page(self):
-        self.all_problems = list(self.db.problems())
-        outer = ctk.CTkFrame(self.content, fg_color="transparent")
-        outer.grid(row=0, column=0, sticky="nsew")
-        outer.grid_columnconfigure(0, weight=1)
-        outer.grid_rowconfigure(2, weight=1)
+            figure, axis = self._create_figure()
 
-        header = ctk.CTkFrame(outer, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 15))
-        ctk.CTkLabel(header, text="Your personal problem vault",
-                     font=(FONT, 14), text_color=C["muted"]).pack(side="left")
-        ctk.CTkButton(header, text="+ New problem", width=125, height=35,
-                      fg_color=C["green"], hover_color=C["green_hover"],
-                      text_color="#FFFFFF", font=(FONT, 11, "bold"),
-                      command=self._add_problem_dialog).pack(side="right")
+            axis.plot(
+                labels,
+                values,
+                color=COLORS["blue"],
+                linewidth=2.2,
+                marker="o",
+                markersize=3.5,
+            )
+            axis.fill_between(
+                range(len(values)),
+                values,
+                color=COLORS["blue"],
+                alpha=0.12,
+            )
 
-        filters = card(outer)
-        filters.grid(row=1, column=0, sticky="ew", pady=(0, 12))
+            axis.set_ylabel("Solved", color=COLORS["muted"], fontsize=8)
+            axis.set_xlabel("Day of month", color=COLORS["muted"], fontsize=8)
+            axis.set_xticks(range(0, len(labels), 4))
+            axis.set_xticklabels(
+                [labels[i] for i in range(0, len(labels), 4)]
+            )
+            axis.set_ylim(bottom=0)
+
+            self._embed_figure(panel, figure)
+
+        except Exception as error:
+            ctk.CTkLabel(
+                panel,
+                text=f"Chart unavailable: {error}",
+                text_color=COLORS["muted"],
+            ).pack(padx=15, pady=25)
+
+    def _draw_topic_chart(self, panel):
+        try:
+            data = backend.stats_by_topic()
+
+            figure, axis = self._create_figure()
+
+            if data:
+                labels = [item[0] for item in data]
+                values = [item[1] for item in data]
+
+                axis.barh(
+                    labels[::-1],
+                    values[::-1],
+                    color=COLORS["purple"],
+                    height=0.58,
+                )
+                axis.set_xlabel("Solved problems", color=COLORS["muted"], fontsize=8)
+                axis.set_xlim(left=0)
+            else:
+                axis.text(
+                    0.5, 0.5, "Solve problems to see topic analytics",
+                    ha="center", va="center",
+                    color=COLORS["muted"],
+                    transform=axis.transAxes,
+                    fontsize=9,
+                )
+                axis.set_xticks([])
+                axis.set_yticks([])
+                axis.grid(False)
+
+            self._embed_figure(panel, figure)
+
+        except Exception as error:
+            ctk.CTkLabel(
+                panel,
+                text=f"Chart unavailable: {error}",
+                text_color=COLORS["muted"],
+            ).pack(padx=15, pady=25)
+
+    # ========================================================
+    # PROBLEMS PAGE
+    # ========================================================
+
+    def show_problems(self):
+        self._set_active_nav("Problems")
+        self._clear_content()
+
+        page = self._page_container()
+        self._page_topbar(page, "PROBLEM MANAGEMENT")
+
+        heading = ctk.CTkFrame(page, fg_color="transparent")
+        heading.grid(row=1, column=0, sticky="ew", padx=30, pady=(5, 15))
+        heading.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            heading,
+            text="Problem library",
+            font=ctk.CTkFont(FONT, 26, "bold"),
+            text_color=COLORS["text"],
+        ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkButton(
+            heading,
+            text="+ Add problem",
+            width=140,
+            height=37,
+            fg_color=COLORS["blue_dark"],
+            command=self.open_add_problem,
+        ).grid(row=0, column=1, sticky="e")
+
+        filters = ctk.CTkFrame(
+            page,
+            fg_color=COLORS["surface"],
+            corner_radius=12,
+        )
+        filters.grid(row=2, column=0, sticky="ew", padx=30, pady=5)
         filters.grid_columnconfigure(0, weight=1)
+
         self.search_var = tk.StringVar()
-        search = ctk.CTkEntry(filters, textvariable=self.search_var, height=38,
-                              placeholder_text="Search problems, topics or patterns...",
-                              fg_color=C["bg"], border_color=C["border"],
-                              text_color=C["text"])
-        search.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
-        search.bind("<KeyRelease>", lambda _e: self._apply_filters())
-        self.status_filter = ctk.CTkOptionMenu(
-            filters, values=["All statuses", "Todo", "Solved", "Revision"],
-            height=36, width=135, fg_color=C["panel_3"], button_color="#34305C",
-            button_hover_color="#463777", command=lambda _v: self._apply_filters()
+        self.topic_filter = tk.StringVar(value="All")
+        self.difficulty_filter = tk.StringVar(value="All")
+        self.status_filter = tk.StringVar(value="All")
+
+        self.search_entry = ctk.CTkEntry(
+            filters,
+            textvariable=self.search_var,
+            placeholder_text="Search problem, topic, pattern or notes...",
+            height=36,
+            width=280,
         )
-        self.status_filter.grid(row=0, column=1, padx=(0, 8), pady=12)
-        self.difficulty_filter = ctk.CTkOptionMenu(
-            filters, values=["All levels", "Easy", "Medium", "Hard"],
-            height=36, width=125, fg_color=C["panel_3"], button_color="#34305C",
-            button_hover_color="#463777", command=lambda _v: self._apply_filters()
+        self.search_entry.grid(row=0, column=0, padx=12, pady=12, sticky="ew")
+
+        self.search_entry.bind(
+            "<KeyRelease>", lambda _event: self._refresh_problem_table()
         )
-        self.difficulty_filter.grid(row=0, column=2, padx=(0, 12), pady=12)
 
-        self.problem_list = ctk.CTkScrollableFrame(outer, fg_color="transparent",
-                                                  scrollbar_button_color=C["panel_3"])
-        self.problem_list.grid(row=2, column=0, sticky="nsew")
-        self._apply_filters()
+        ctk.CTkOptionMenu(
+            filters,
+            variable=self.topic_filter,
+            values=["All"] + self._get_topics(),
+            width=130,
+            command=lambda _value: self._refresh_problem_table(),
+        ).grid(row=0, column=1, padx=5, pady=12)
 
-    def _apply_filters(self):
-        if not hasattr(self, "problem_list") or not self.problem_list.winfo_exists():
+        ctk.CTkOptionMenu(
+            filters,
+            variable=self.difficulty_filter,
+            values=["All", "Easy", "Medium", "Hard"],
+            width=125,
+            command=lambda _value: self._refresh_problem_table(),
+        ).grid(row=0, column=2, padx=5, pady=12)
+
+        ctk.CTkOptionMenu(
+            filters,
+            variable=self.status_filter,
+            values=["All", "Todo", "Solved", "Revision"],
+            width=125,
+            command=lambda _value: self._refresh_problem_table(),
+        ).grid(row=0, column=3, padx=(5, 12), pady=12)
+
+        self.table_panel = ctk.CTkFrame(
+            page,
+            fg_color=COLORS["surface"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        self.table_panel.grid(
+            row=3, column=0, sticky="nsew", padx=30, pady=(10, 25)
+        )
+        self.table_panel.grid_columnconfigure(0, weight=1)
+
+        self._refresh_problem_table()
+
+    def _get_topics(self) -> list[str]:
+        try:
+            # Keep database access inside the backend layer.
+            topics = {
+                problem["topic"]
+                for problem in backend.get_all_problems()
+                if problem.get("topic")
+            }
+            return sorted(topics, key=str.casefold)
+        except Exception:
+            return []
+
+    def _refresh_problem_table(self):
+        """Rebuild the problem table with one consistent column grid."""
+        if not hasattr(self, "table_panel"):
             return
-        for w in self.problem_list.winfo_children():
-            w.destroy()
-        query = self.search_var.get().strip().lower()
-        sf = self.status_filter.get()
-        df = self.difficulty_filter.get()
-        rows = []
-        for p in self.all_problems:
-            name = str(value(p, "problem_name", "name", default=""))
-            topic = str(value(p, "topic", default=""))
-            pattern = str(value(p, "pattern", default=""))
-            status = normalize_status(value(p, "status", default="Todo"))
-            difficulty = normalize_difficulty(value(p, "difficulty", default="Medium"))
-            if query and query not in f"{name} {topic} {pattern}".lower():
-                continue
-            if sf != "All statuses" and status != sf:
-                continue
-            if df != "All levels" and difficulty != df:
-                continue
-            rows.append(p)
-        if not rows:
-            self._empty(self.problem_list, "No matching problems.", "Try changing your filters or add a new problem.")
+
+        for widget in self.table_panel.winfo_children():
+            widget.destroy()
+
+        try:
+            self.problem_rows = backend.filter_by_problems(
+                topic=self.topic_filter.get(),
+                difficulty=self.difficulty_filter.get(),
+                status=self.status_filter.get(),
+                search=self.search_var.get(),
+            )
+        except Exception as error:
+            self._show_error("Could not load problems", error)
             return
-        for p in rows:
-            self._problem_row(self.problem_list, p, compact=False, actions=True)
 
-    def _problem_row(self, parent, p, compact=False, actions=False):
-        name = str(value(p, "problem_name", "name", default="Untitled problem"))
-        topic = str(value(p, "topic", default="General"))
-        difficulty = normalize_difficulty(value(p, "difficulty", default="Medium"))
-        status = normalize_status(value(p, "status", default="Todo"))
-        pid = value(p, "problem_id", "id", default=None)
-        frame = ctk.CTkFrame(parent, fg_color=C["panel"], corner_radius=12,
-                             border_width=1, border_color=C["border"])
-        frame.pack(fill="x", padx=2, pady=4)
-        frame.grid_columnconfigure(0, weight=1)
-        info = ctk.CTkFrame(frame, fg_color="transparent")
-        info.grid(row=0, column=0, sticky="w", padx=14, pady=11)
-        ctk.CTkLabel(info, text=name, font=(FONT, 12, "bold"),
-                     text_color=C["text"]).pack(anchor="w")
-        ctk.CTkLabel(info, text=f"{topic}  ·  {difficulty}  ·  {status}",
-                     font=(FONT, 10), text_color=C["muted"]).pack(anchor="w", pady=(3, 0))
-        if actions:
-            right = ctk.CTkFrame(frame, fg_color="transparent")
-            right.grid(row=0, column=1, sticky="e", padx=10)
-            next_status = "Solved" if status != "Solved" else "Revision"
-            ctk.CTkButton(right, text=next_status, width=82, height=29,
-                          fg_color=C["panel_3"], hover_color="#302A50",
-                          text_color=C["green"], font=(FONT, 10),
-                          command=lambda i=pid, s=next_status: self._change_status(i, s)).pack(side="left", padx=3)
-            ctk.CTkButton(right, text="Delete", width=58, height=29,
-                          fg_color="#35212A", hover_color="#56303F",
-                          text_color=C["red"], font=(FONT, 10),
-                          command=lambda i=pid: self._delete_problem(i)).pack(side="left", padx=3)
+        # These same weights and uniform group are applied to the header and
+        # every body row, so each column starts and ends at the same x-position.
+        widths = [4.0, 1.25, 1.1, 1.1, 1.4, 1.55]
+        headers = ["PROBLEM", "TOPIC", "DIFFICULTY", "STATUS", "SOLVED ON", "ACTIONS"]
 
-    def _add_problem_dialog(self):
+        header = ctk.CTkFrame(
+            self.table_panel,
+            fg_color=COLORS["surface_2"],
+            corner_radius=8,
+            height=48,
+        )
+        header.pack(fill="x", padx=12, pady=(12, 6))
+        header.pack_propagate(False)
+
+        for column, weight in enumerate(widths):
+            header.grid_columnconfigure(
+                column, weight=int(weight * 100), uniform="problem_table"
+            )
+            ctk.CTkLabel(
+                header,
+                text=headers[column],
+                font=ctk.CTkFont(FONT, 10, "bold"),
+                text_color=COLORS["muted"],
+                anchor="w" if column == 0 else "center",
+            ).grid(
+                row=0,
+                column=column,
+                sticky="ew",
+                padx=(16, 10) if column == 0 else 8,
+                pady=10,
+            )
+
+        if not self.problem_rows:
+            ctk.CTkLabel(
+                self.table_panel,
+                text="No problems found. Add your first DSA problem!",
+                font=ctk.CTkFont(FONT, 13),
+                text_color=COLORS["muted"],
+            ).pack(pady=45)
+            return
+
+        for index, problem in enumerate(self.problem_rows):
+            self._create_problem_row(problem, widths, index)
+
+        ctk.CTkLabel(
+            self.table_panel,
+            text=f"{len(self.problem_rows)} problem(s)",
+            font=ctk.CTkFont(FONT, 10),
+            text_color=COLORS["muted"],
+        ).pack(anchor="e", padx=18, pady=(8, 13))
+
+    def _create_problem_row(self, problem, widths, row_index=0):
+        row = ctk.CTkFrame(
+            self.table_panel,
+            fg_color="transparent",
+            height=48,
+        )
+        row.pack(fill="x", padx=12, pady=1)
+        row.pack_propagate(False)
+
+        for column, weight in enumerate(widths):
+            row.grid_columnconfigure(
+                column, weight=int(weight * 100), uniform="problem_table"
+            )
+
+        name = problem["problem_name"]
+        if problem.get("problem_link"):
+            name = "↗  " + name
+
+        ctk.CTkLabel(
+            row,
+            text=name,
+            font=ctk.CTkFont(FONT, 12, "bold"),
+            text_color=COLORS["text"],
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=(16, 10), pady=5)
+
+        ctk.CTkLabel(
+            row,
+            text=problem.get("topic", "—"),
+            font=ctk.CTkFont(FONT, 11),
+            text_color=COLORS["muted"],
+            anchor="center",
+        ).grid(row=0, column=1, sticky="ew", padx=8, pady=5)
+
+        difficulty_colors = {
+            "Easy": COLORS["green"],
+            "Medium": COLORS["yellow"],
+            "Hard": COLORS["red"],
+        }
+        ctk.CTkLabel(
+            row,
+            text=problem.get("difficulty", "—"),
+            font=ctk.CTkFont(FONT, 11, "bold"),
+            text_color=difficulty_colors.get(
+                problem.get("difficulty"), COLORS["muted"]
+            ),
+            anchor="center",
+        ).grid(row=0, column=2, sticky="ew", padx=8, pady=5)
+
+        status_colors = {
+            "Solved": COLORS["green"],
+            "Todo": COLORS["yellow"],
+            "Revision": COLORS["purple"],
+        }
+        ctk.CTkLabel(
+            row,
+            text=problem.get("status", "—"),
+            font=ctk.CTkFont(FONT, 11, "bold"),
+            text_color=status_colors.get(
+                problem.get("status"), COLORS["muted"]
+            ),
+            anchor="center",
+        ).grid(row=0, column=3, sticky="ew", padx=8, pady=5)
+
+        ctk.CTkLabel(
+            row,
+            text=problem.get("date_solved") or "—",
+            font=ctk.CTkFont(FONT, 10),
+            text_color=COLORS["muted"],
+            anchor="center",
+        ).grid(row=0, column=4, sticky="ew", padx=8, pady=5)
+
+        actions = ctk.CTkFrame(row, fg_color="transparent")
+        actions.grid(row=0, column=5, sticky="nsew", padx=4, pady=4)
+        actions.grid_columnconfigure((0, 1), weight=0)
+        actions.grid_rowconfigure(0, weight=1)
+
+        button_group = ctk.CTkFrame(actions, fg_color="transparent")
+        button_group.place(relx=0.5, rely=0.5, anchor="center")
+
+        ctk.CTkButton(
+            button_group,
+            text="Edit",
+            width=62,
+            height=29,
+            corner_radius=7,
+            fg_color=COLORS["surface_2"],
+            hover_color=COLORS["border"],
+            command=lambda p=problem: self.open_edit_problem(p),
+        ).pack(side="left", padx=(0, 5))
+
+        ctk.CTkButton(
+            button_group,
+            text="×",
+            width=30,
+            height=29,
+            corner_radius=7,
+            fg_color="#4A2431",
+            hover_color="#7F1D1D",
+            command=lambda p=problem: self.confirm_delete(p),
+        ).pack(side="left")
+
+        ctk.CTkFrame(
+            self.table_panel,
+            height=1,
+            fg_color=COLORS["border"],
+        ).pack(fill="x", padx=16)
+
+    # ========================================================
+    # ADD / EDIT PROBLEM DIALOG
+    # ========================================================
+
+    def open_add_problem(self):
+        self._open_problem_dialog()
+
+    def open_edit_problem(self, problem):
+        self._open_problem_dialog(problem)
+
+    def _open_problem_dialog(self, problem=None):
+        is_edit = problem is not None
+
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Add a problem")
-        dialog.geometry("420x750")
-        dialog.resizable(True, True)
-        dialog.configure(fg_color=C["bg"])
+        dialog.title("Edit problem" if is_edit else "Add problem")
+        dialog.geometry("520x690")
+        dialog.resizable(False, False)
+        dialog.configure(fg_color=COLORS["background"])
         dialog.transient(self)
         dialog.grab_set()
 
-        ctk.CTkLabel(dialog, text="Add to your problem vault",
-                     font=(FONT, 21, "bold"), text_color=C["text"]).pack(anchor="w", padx=25, pady=(24, 4))
-        ctk.CTkLabel(dialog, text="Capture the problem. Learn the pattern.",
-                     font=(FONT, 11), text_color=C["muted"]).pack(anchor="w", padx=25, pady=(0, 18))
+        container = ctk.CTkScrollableFrame(
+            dialog,
+            fg_color=COLORS["background"],
+        )
+        container.pack(fill="both", expand=True, padx=20, pady=18)
 
-        fields = {}
-        def add_entry(label, placeholder="", default=""):
-            ctk.CTkLabel(dialog, text=label.upper(), font=(FONT, 9, "bold"),
-                         text_color=C["dim"]).pack(anchor="w", padx=25, pady=(9, 5))
-            ent = ctk.CTkEntry(dialog, height=38, placeholder_text=placeholder,
-                               fg_color=C["panel"], border_color=C["border"],
-                               text_color=C["text"])
-            ent.pack(fill="x", padx=25)
-            if default:
-                ent.insert(0, default)
-            fields[label] = ent
-            return ent
+        ctk.CTkLabel(
+            container,
+            text="Edit problem" if is_edit else "Add a new problem",
+            font=ctk.CTkFont(FONT, 23, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w", pady=(5, 3))
 
-        add_entry("Problem name", "e.g. Two Sum")
-        add_entry("Topic", "e.g. Arrays")
-        add_entry("Problem link", "https://...")
-        add_entry("Pattern", "e.g. Hash map")
-        ctk.CTkLabel(dialog, text="DIFFICULTY", font=(FONT, 9, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=25, pady=(12, 5))
-        difficulty = ctk.CTkOptionMenu(dialog, values=["Easy", "Medium", "Hard"],
-                                       fg_color=C["panel_2"], button_color="#34305C",
-                                       button_hover_color="#463777", height=36)
-        difficulty.pack(fill="x", padx=25)
-        ctk.CTkLabel(dialog, text="STATUS", font=(FONT, 9, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=25, pady=(12, 5))
-        status = ctk.CTkOptionMenu(dialog, values=["Todo", "Solved", "Revision"],
-                                   fg_color=C["panel_2"], button_color="#34305C",
-                                   button_hover_color="#463777", height=36)
-        status.pack(fill="x", padx=25)
-        ctk.CTkLabel(dialog, text="NOTES", font=(FONT, 9, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=25, pady=(12, 5))
-        notes = ctk.CTkTextbox(dialog, height=75, fg_color=C["panel"],
-                               border_width=1, border_color=C["border"],
-                               text_color=C["text"], corner_radius=9)
-        notes.pack(fill="x", padx=25)
+        ctk.CTkLabel(
+            container,
+            text="Keep your practice history organized.",
+            font=ctk.CTkFont(FONT, 11),
+            text_color=COLORS["muted"],
+        ).pack(anchor="w", pady=(0, 17))
+
+        values = {
+            "name": problem.get("problem_name", "") if is_edit else "",
+            "link": problem.get("problem_link", "") if is_edit else "",
+            "topic": problem.get("topic", "") if is_edit else "",
+            "difficulty": problem.get("difficulty", "Easy") if is_edit else "Easy",
+            "status": problem.get("status", "Todo") if is_edit else "Todo",
+            "pattern": problem.get("pattern", "") if is_edit else "",
+            "notes": problem.get("notes", "") if is_edit else "",
+        }
+
+        def add_label(text):
+            ctk.CTkLabel(
+                container,
+                text=text,
+                font=ctk.CTkFont(FONT, 11, "bold"),
+                text_color=COLORS["muted"],
+            ).pack(anchor="w", pady=(9, 5))
+
+        def add_entry(label, value, placeholder=""):
+            add_label(label)
+            entry = ctk.CTkEntry(
+                container,
+                height=38,
+                placeholder_text=placeholder,
+            )
+            entry.pack(fill="x")
+            entry.insert(0, value)
+            return entry
+
+        name_entry = add_entry(
+            "PROBLEM NAME", values["name"], "e.g. Two Sum"
+        )
+        link_entry = add_entry(
+            "PROBLEM LINK", values["link"], "https://leetcode.com/..."
+        )
+        topic_entry = add_entry(
+            "TOPIC", values["topic"], "e.g. Arrays"
+        )
+
+        add_label("DIFFICULTY")
+        difficulty_menu = ctk.CTkOptionMenu(
+            container,
+            values=["Easy", "Medium", "Hard"],
+            height=36,
+        )
+        difficulty_menu.pack(fill="x")
+        difficulty_menu.set(values["difficulty"])
+
+        add_label("STATUS")
+        status_menu = ctk.CTkOptionMenu(
+            container,
+            values=["Todo", "Solved", "Revision"],
+            height=36,
+        )
+        status_menu.pack(fill="x")
+        status_menu.set(values["status"])
+
+        pattern_entry = add_entry(
+            "PATTERN", values["pattern"], "e.g. Two pointers"
+        )
+
+        add_label("NOTES")
+        notes_box = ctk.CTkTextbox(
+            container,
+            height=105,
+            corner_radius=8,
+        )
+        notes_box.pack(fill="x")
+        notes_box.insert("1.0", values["notes"])
 
         def save():
-            name = fields["Problem name"].get().strip()
-            topic = fields["Topic"].get().strip()
-            if not name or not topic:
-                messagebox.showwarning("Missing information", "Please enter at least a problem name and topic.", parent=dialog)
-                return
             try:
-                self.db.add(
-                    name, topic, difficulty.get(), status.get(),
-                    fields["Problem link"].get().strip(),
-                    fields["Pattern"].get().strip(), notes.get("1.0", "end").strip()
-                )
+                payload = {
+                    "problem_name": name_entry.get(),
+                    "problem_link": link_entry.get(),
+                    "topic": topic_entry.get(),
+                    "difficulty": difficulty_menu.get(),
+                    "status": status_menu.get(),
+                    "pattern": pattern_entry.get(),
+                    "notes": notes_box.get("1.0", "end-1c"),
+                }
+
+                if is_edit:
+                    updated = backend.update_problem(
+                        problem["problem_id"],
+                        **payload,
+                    )
+                    if not updated:
+                        raise backend.ProblemNotFoundError(
+                            "This problem no longer exists."
+                        )
+                else:
+                    backend.add_problem(**payload)
+
                 dialog.destroy()
-                self.refresh_data()
-            except Exception as exc:
-                messagebox.showerror("Could not save problem", str(exc), parent=dialog)
+                self._after_problem_change()
 
-        ctk.CTkButton(dialog, text="Save problem  →", height=42,
-                      fg_color=C["green"], hover_color=C["green_hover"],
-                      text_color="#FFFFFF", font=(FONT, 12, "bold"),
-                      command=save).pack(fill="x", padx=25, pady=20)
+            except Exception as error:
+                self._show_error("Could not save problem", error)
 
-    def _change_status(self, pid, status):
-        if pid is None:
-            messagebox.showerror("Missing problem ID", "This row has no problem_id/id field.")
+        ctk.CTkButton(
+            container,
+            text="Save changes" if is_edit else "Add problem",
+            height=42,
+            fg_color=COLORS["blue_dark"],
+            hover_color="#1D4ED8",
+            command=save,
+        ).pack(fill="x", pady=(20, 10))
+
+        ctk.CTkButton(
+            container,
+            text="Cancel",
+            height=36,
+            fg_color=COLORS["surface_2"],
+            hover_color=COLORS["border"],
+            command=dialog.destroy,
+        ).pack(fill="x", pady=(0, 10))
+
+    def confirm_delete(self, problem):
+        confirmed = messagebox.askyesno(
+            "Delete problem",
+            f"Are you sure you want to delete "
+            f"'{problem['problem_name']}'?",
+        )
+
+        if not confirmed:
             return
+
         try:
-            self.db.update_status(pid, status)
-            self.refresh_data()
-        except Exception as exc:
-            messagebox.showerror("Update failed", str(exc))
+            backend.delete_problem(problem["problem_id"])
+            self._after_problem_change()
+        except Exception as error:
+            self._show_error("Could not delete problem", error)
 
-    def _delete_problem(self, pid):
-        if pid is None:
-            messagebox.showerror("Missing problem ID", "This row has no problem_id/id field.")
+    def _after_problem_change(self):
+        self._refresh_sidebar()
+
+        if self.current_page == "Problems":
+            self.show_problems()
+        elif self.current_page == "Analytics":
+            self.show_analytics()
+        elif self.current_page == "Revisions":
+            self.show_revisions()
+        elif self.current_page == "Goals":
+            self.show_goals()
+        else:
+            self.show_dashboard()
+
+    # ========================================================
+    # ANALYTICS PAGE
+    # ========================================================
+
+    def show_analytics(self):
+        self._set_active_nav("Analytics")
+        self._clear_content()
+
+        page = self._page_container()
+        self._page_topbar(page, "PERFORMANCE ANALYTICS")
+
+        ctk.CTkLabel(
+            page,
+            text="Understand your practice.",
+            font=ctk.CTkFont(FONT, 26, "bold"),
+            text_color=COLORS["text"],
+        ).grid(row=1, column=0, sticky="w", padx=30, pady=(5, 15))
+
+        chart_grid = ctk.CTkFrame(page, fg_color="transparent")
+        chart_grid.grid(row=2, column=0, sticky="ew", padx=23, pady=5)
+        chart_grid.grid_columnconfigure((0, 1), weight=1, uniform="analytics")
+
+        activity = self._panel(
+            chart_grid, "Daily solving activity — last 30 days", 0, 0
+        )
+        topics = self._panel(
+            chart_grid, "Topic distribution", 0, 1
+        )
+        difficulty = self._panel(
+            chart_grid, "Difficulty distribution", 1, 0
+        )
+        weekly = self._panel(
+            chart_grid, "Weekly progress — Monday to Sunday", 1, 1
+        )
+
+        self._draw_activity_chart(activity)
+        self._draw_topic_chart(topics)
+        self._draw_difficulty_chart(difficulty)
+        self._draw_weekly_chart(weekly)
+
+        performance_panel = self._panel(
+            page, "Strong and developing topics", 3, 0
+        )
+        self._render_topic_performance(performance_panel)
+
+        self._refresh_sidebar()
+
+    def _draw_difficulty_chart(self, panel):
+        try:
+            data = backend.stats_by_difficulty()
+            figure, axis = self._create_figure()
+
+            if data:
+                labels = [item[0] for item in data]
+                values = [item[1] for item in data]
+                colors = [
+                    COLORS["green"] if label == "Easy"
+                    else COLORS["yellow"] if label == "Medium"
+                    else COLORS["red"]
+                    for label in labels
+                ]
+
+                axis.bar(labels, values, color=colors, width=0.55)
+                axis.set_ylabel("Solved", color=COLORS["muted"], fontsize=8)
+                axis.set_ylim(bottom=0)
+            else:
+                axis.text(
+                    0.5, 0.5, "No solved problems yet",
+                    ha="center", va="center",
+                    color=COLORS["muted"],
+                    transform=axis.transAxes,
+                )
+                axis.set_xticks([])
+                axis.set_yticks([])
+                axis.grid(False)
+
+            self._embed_figure(panel, figure)
+
+        except Exception as error:
+            ctk.CTkLabel(
+                panel, text=str(error), text_color=COLORS["muted"]
+            ).pack(pady=20)
+
+    def _draw_weekly_chart(self, panel):
+        try:
+            values = backend.get_weekly_progress()
+            labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+            figure, axis = self._create_figure()
+
+            axis.bar(
+                labels,
+                values,
+                color=COLORS["cyan"],
+                width=0.58,
+            )
+            axis.set_ylabel("Solved", color=COLORS["muted"], fontsize=8)
+            axis.set_ylim(bottom=0)
+
+            self._embed_figure(panel, figure)
+
+        except Exception as error:
+            ctk.CTkLabel(
+                panel, text=str(error), text_color=COLORS["muted"]
+            ).pack(pady=20)
+
+    # ========================================================
+    # CONTRIBUTION CALENDAR AND GOAL WIDGETS
+    # ========================================================
+
+    def _render_contribution_calendar(self, panel):
+        try:
+            days = backend.get_contribution_calendar()
+        except Exception as error:
+            ctk.CTkLabel(
+                panel, text=f"Calendar unavailable: {error}",
+                text_color=COLORS["muted"],
+            ).pack(padx=15, pady=20)
             return
-        if messagebox.askyesno("Delete problem", "Delete this problem from your tracker? This cannot be undone."):
+
+        grid = ctk.CTkFrame(panel, fg_color="transparent")
+        grid.pack(fill="x", padx=14, pady=(7, 8))
+
+        level_colors = [
+            "#263247",
+            "#174B3A",
+            "#16865A",
+            "#34D399",
+        ]
+
+        for index, item in enumerate(days):
+            row, column = divmod(index, 7)
+            cell = ctk.CTkFrame(
+                grid,
+                fg_color=level_colors[item["level"]],
+                corner_radius=5,
+                width=43,
+                height=43,
+            )
+            cell.grid(row=row, column=column, padx=3, pady=3, sticky="nsew")
+            cell.grid_propagate(False)
+
+            ctk.CTkLabel(
+                cell,
+                text=f'{item["day"]:02d}',
+                font=ctk.CTkFont(FONT, 10, "bold"),
+                text_color="#F8FAFC",
+            ).pack(pady=(5, 0))
+
+            ctk.CTkLabel(
+                cell,
+                text=str(item["count"]),
+                font=ctk.CTkFont(FONT, 9),
+                text_color="#E2E8F0",
+            ).pack()
+
+        legend = ctk.CTkFrame(panel, fg_color="transparent")
+        legend.pack(anchor="e", padx=15, pady=(0, 12))
+
+        ctk.CTkLabel(
+            legend, text="Less",
+            font=ctk.CTkFont(FONT, 9),
+            text_color=COLORS["muted"],
+        ).pack(side="left", padx=(0, 5))
+
+        for color in level_colors:
+            swatch = ctk.CTkFrame(
+                legend, fg_color=color, width=12, height=12, corner_radius=3
+            )
+            swatch.pack(side="left", padx=2)
+
+        ctk.CTkLabel(
+            legend, text="More",
+            font=ctk.CTkFont(FONT, 9),
+            text_color=COLORS["muted"],
+        ).pack(side="left", padx=(5, 0))
+
+    def _render_goal_summary(self, panel):
+        try:
+            goals = backend.get_goals()
+        except Exception as error:
+            ctk.CTkLabel(
+                panel, text=f"Goals unavailable: {error}",
+                text_color=COLORS["muted"],
+            ).pack(padx=15, pady=20)
+            return
+
+        for period, label in (("weekly", "Weekly"), ("monthly", "Monthly")):
+            goal = goals[period]
+            block = ctk.CTkFrame(panel, fg_color="transparent")
+            block.pack(fill="x", padx=16, pady=(7, 5))
+
+            target_text = (
+                f'{goal["completed"]} / {goal["target"]} solved'
+                if goal["target"]
+                else f'{goal["completed"]} solved · no target set'
+            )
+
+            top = ctk.CTkFrame(block, fg_color="transparent")
+            top.pack(fill="x")
+
+            ctk.CTkLabel(
+                top, text=f"{label} goal",
+                font=ctk.CTkFont(FONT, 12, "bold"),
+                text_color=COLORS["text"],
+            ).pack(side="left")
+
+            ctk.CTkLabel(
+                top, text=target_text,
+                font=ctk.CTkFont(FONT, 10),
+                text_color=COLORS["muted"],
+            ).pack(side="right")
+
+            progress = ctk.CTkProgressBar(
+                block,
+                height=9,
+                progress_color=COLORS["green"] if goal["is_complete"] else COLORS["blue"],
+                fg_color=COLORS["surface_2"],
+            )
+            progress.pack(fill="x", pady=(7, 3))
+            progress.set(goal["percentage"] / 100 if goal["target"] else 0)
+
+        ctk.CTkButton(
+            panel,
+            text="Manage goals →",
+            height=32,
+            fg_color=COLORS["surface_2"],
+            hover_color=COLORS["border"],
+            command=self.show_goals,
+        ).pack(anchor="e", padx=16, pady=(5, 12))
+
+    def _render_topic_performance(self, panel):
+        try:
+            performance = backend.get_topic_performance()
+        except Exception as error:
+            ctk.CTkLabel(
+                panel, text=f"Topic analysis unavailable: {error}",
+                text_color=COLORS["muted"],
+            ).pack(padx=16, pady=20)
+            return
+
+        strongest = performance["strongest"]
+        least = performance["least_practiced"]
+
+        row = ctk.CTkFrame(panel, fg_color="transparent")
+        row.pack(fill="x", padx=16, pady=(8, 15))
+        row.grid_columnconfigure((0, 1), weight=1, uniform="topic-performance")
+
+        strong_card = ctk.CTkFrame(
+            row, fg_color=COLORS["surface_2"], corner_radius=10
+        )
+        strong_card.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        weak_card = ctk.CTkFrame(
+            row, fg_color=COLORS["surface_2"], corner_radius=10
+        )
+        weak_card.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+        ctk.CTkLabel(
+            strong_card, text="MOST SOLVED",
+            font=ctk.CTkFont(FONT, 10, "bold"),
+            text_color=COLORS["green"],
+        ).pack(anchor="w", padx=13, pady=(12, 4))
+
+        ctk.CTkLabel(
+            strong_card,
+            text=strongest["topic"] if strongest else "Not enough data",
+            font=ctk.CTkFont(FONT, 16, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w", padx=13)
+
+        ctk.CTkLabel(
+            strong_card,
+            text=(
+                f'{strongest["solved"]} solved · '
+                f'{strongest["completion_rate"]:.0f}% completion'
+                if strongest else "Add and solve problems to see this."
+            ),
+            font=ctk.CTkFont(FONT, 10),
+            text_color=COLORS["muted"],
+        ).pack(anchor="w", padx=13, pady=(4, 12))
+
+        ctk.CTkLabel(
+            weak_card, text="NEEDS MORE PRACTICE",
+            font=ctk.CTkFont(FONT, 10, "bold"),
+            text_color=COLORS["yellow"],
+        ).pack(anchor="w", padx=13, pady=(12, 4))
+
+        ctk.CTkLabel(
+            weak_card,
+            text=least["topic"] if least else "Not enough data",
+            font=ctk.CTkFont(FONT, 16, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w", padx=13)
+
+        ctk.CTkLabel(
+            weak_card,
+            text=(
+                f'{least["solved"]} solved · {least["tracked"]} tracked'
+                if least else "Add and solve problems to see this."
+            ),
+            font=ctk.CTkFont(FONT, 10),
+            text_color=COLORS["muted"],
+        ).pack(anchor="w", padx=13, pady=(4, 12))
+
+    # ========================================================
+    # GOAL TRACKER
+    # ========================================================
+
+    def show_goals(self):
+        self._set_active_nav("Goals")
+        self._clear_content()
+
+        page = self._page_container()
+        self._page_topbar(page, "GOAL TRACKER")
+
+        ctk.CTkLabel(
+            page,
+            text="Turn consistency into measurable progress.",
+            font=ctk.CTkFont(FONT, 25, "bold"),
+            text_color=COLORS["text"],
+        ).grid(row=1, column=0, sticky="w", padx=30, pady=(5, 5))
+
+        ctk.CTkLabel(
+            page,
+            text="Set targets for the number of problems you want to solve.",
+            font=ctk.CTkFont(FONT, 12),
+            text_color=COLORS["muted"],
+        ).grid(row=2, column=0, sticky="w", padx=30, pady=(0, 18))
+
+        try:
+            goals = backend.get_goals()
+        except Exception as error:
+            self._show_error("Could not load goals", error)
+            goals = {
+                "weekly": {"target": 0, "completed": 0, "percentage": 0,
+                           "remaining": 0, "is_complete": False},
+                "monthly": {"target": 0, "completed": 0, "percentage": 0,
+                            "remaining": 0, "is_complete": False},
+            }
+
+        cards = ctk.CTkFrame(page, fg_color="transparent")
+        cards.grid(row=3, column=0, sticky="ew", padx=23, pady=5)
+        cards.grid_columnconfigure((0, 1), weight=1, uniform="goal-cards")
+
+        self._goal_editor(
+            cards, 0, "Weekly target", "weekly", goals["weekly"]
+        )
+        self._goal_editor(
+            cards, 1, "Monthly target", "monthly", goals["monthly"]
+        )
+
+        info = ctk.CTkFrame(
+            page, fg_color=COLORS["surface"], corner_radius=12
+        )
+        info.grid(row=4, column=0, sticky="ew", padx=30, pady=15)
+
+        ctk.CTkLabel(
+            info,
+            text="How goal progress is calculated",
+            font=ctk.CTkFont(FONT, 14, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w", padx=18, pady=(15, 5))
+
+        ctk.CTkLabel(
+            info,
+            text=(
+                "Only problems marked Solved count toward your goals. "
+                "Weekly progress runs Monday–Sunday. Monthly progress "
+                "runs from the first to the last day of the current month. "
+                "Your targets are saved locally in algotrack.db."
+            ),
+            font=ctk.CTkFont(FONT, 12),
+            text_color=COLORS["muted"],
+            wraplength=850,
+            justify="left",
+        ).pack(anchor="w", padx=18, pady=(0, 16))
+
+        self._refresh_sidebar()
+
+    def _goal_editor(self, parent, column, title, period, goal):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=COLORS["surface"],
+            corner_radius=14,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        card.grid(row=0, column=column, sticky="nsew", padx=7, pady=7)
+
+        ctk.CTkLabel(
+            card, text=title,
+            font=ctk.CTkFont(FONT, 16, "bold"),
+            text_color=COLORS["text"],
+        ).pack(anchor="w", padx=18, pady=(17, 5))
+
+        progress_text = (
+            f'{goal["completed"]} of {goal["target"]} problems solved'
+            if goal["target"]
+            else f'{goal["completed"]} problems solved · target not set'
+        )
+        ctk.CTkLabel(
+            card, text=progress_text,
+            font=ctk.CTkFont(FONT, 11),
+            text_color=COLORS["muted"],
+        ).pack(anchor="w", padx=18, pady=(0, 8))
+
+        progress = ctk.CTkProgressBar(
+            card,
+            height=12,
+            progress_color=COLORS["green"] if goal["is_complete"] else COLORS["blue"],
+            fg_color=COLORS["surface_2"],
+        )
+        progress.pack(fill="x", padx=18, pady=(0, 5))
+        progress.set(goal["percentage"] / 100 if goal["target"] else 0)
+
+        percentage_text = (
+            f'{goal["percentage"]}% complete'
+            if goal["target"] else "Set a target to begin tracking"
+        )
+        ctk.CTkLabel(
+            card, text=percentage_text,
+            font=ctk.CTkFont(FONT, 10, "bold"),
+            text_color=COLORS["green"] if goal["is_complete"] else COLORS["blue"],
+        ).pack(anchor="w", padx=18, pady=(0, 12))
+
+        entry = ctk.CTkEntry(
+            card,
+            height=38,
+            placeholder_text="Enter number of problems",
+        )
+        entry.pack(fill="x", padx=18, pady=(0, 10))
+        if goal["target"]:
+            entry.insert(0, str(goal["target"]))
+
+        def save_goal():
+            raw = entry.get().strip()
             try:
-                self.db.delete(pid)
-                self.refresh_data()
-            except Exception as exc:
-                messagebox.showerror("Delete failed", str(exc))
+                target = int(raw)
+                backend.set_goal(period, target)
+                messagebox.showinfo(
+                    "Goal saved",
+                    f"Your {period} target is now {target} solved problems.",
+                )
+                self.show_goals()
+            except ValueError:
+                messagebox.showwarning(
+                    "Invalid target",
+                    "Enter a positive whole number, such as 10 or 25.",
+                )
+            except Exception as error:
+                self._show_error("Could not save goal", error)
 
-    # ───────────────────────────── FOCUS MODE ─────────────────────────────
+        ctk.CTkButton(
+            card,
+            text="Save target",
+            height=38,
+            fg_color=COLORS["blue_dark"],
+            hover_color="#1D4ED8",
+            command=save_goal,
+        ).pack(fill="x", padx=18, pady=(0, 17))
 
-    def _focus_page(self):
-        frame = ctk.CTkFrame(self.content, fg_color="transparent")
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.grid_columnconfigure(0, weight=1)
-        hero = ctk.CTkFrame(frame, fg_color="#171728", corner_radius=20,
-                            border_width=1, border_color="#34305C")
-        hero.pack(fill="x", pady=(0, 16))
-        ctk.CTkLabel(hero, text="FOCUS MODE", font=(FONT, 10, "bold"),
-                     text_color="#BBAAFF").pack(pady=(25, 7))
-        ctk.CTkLabel(hero, text="One problem. One clear mind.",
-                     font=(FONT, 25, "bold"), text_color=C["text"]).pack()
-        ctk.CTkLabel(hero, text="Set a small intention and give it your full attention.",
-                     font=(FONT, 12), text_color=C["muted"]).pack(pady=(7, 22))
+    # REVISION PAGE
 
-        timer_card = card(frame)
-        timer_card.pack(fill="x", pady=8)
-        ctk.CTkLabel(timer_card, text="POMODORO SESSION", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(pady=(22, 4))
-        self.timer_label = ctk.CTkLabel(timer_card, text="25:00",
-                                        font=(MONO, 54, "bold"), text_color=C["green"])
-        self.timer_label.pack(pady=5)
-        self.timer_running = False
-        self.timer_seconds = 25 * 60
-        self.timer_job = None
-        controls = ctk.CTkFrame(timer_card, fg_color="transparent")
-        controls.pack(pady=(7, 22))
-        ctk.CTkButton(controls, text="Start focus", width=120, height=38,
-                      fg_color=C["green"], hover_color=C["green_hover"],
-                      text_color="#FFFFFF", command=self._timer_start).pack(side="left", padx=5)
-        ctk.CTkButton(controls, text="Pause", width=90, height=38,
-                      fg_color=C["panel_3"], hover_color="#302A50",
-                      text_color=C["text"], command=self._timer_pause).pack(side="left", padx=5)
-        ctk.CTkButton(controls, text="Reset", width=90, height=38,
-                      fg_color=C["panel_3"], hover_color="#302A50",
-                      text_color=C["text"], command=self._timer_reset).pack(side="left", padx=5)
 
-        intention = card(frame)
-        intention.pack(fill="x", pady=8)
-        ctk.CTkLabel(intention, text="TODAY'S INTENTION", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=18, pady=(16, 7))
-        self.intention_entry = ctk.CTkEntry(intention, height=40,
-                                            placeholder_text="e.g. Solve two array problems without looking at hints",
-                                            fg_color=C["bg"], border_color=C["border"])
-        self.intention_entry.pack(fill="x", padx=18, pady=(0, 17))
+    def show_revisions(self):
+        self._set_active_nav("Revisions")
+        self._clear_content()
 
-    def _timer_start(self):
-        if not self.timer_running:
-            self.timer_running = True
-            self._timer_tick()
+        page = self._page_container()
+        self._page_topbar(page, "SPACED REVISION")
 
-    def _timer_pause(self):
-        self.timer_running = False
-        if self.timer_job:
-            self.after_cancel(self.timer_job)
-            self.timer_job = None
+        ctk.CTkLabel(
+            page,
+            text="Review. Remember. Repeat.",
+            font=ctk.CTkFont(FONT, 26, "bold"),
+            text_color=COLORS["text"],
+        ).grid(row=1, column=0, sticky="w", padx=30, pady=(5, 5))
 
-    def _timer_reset(self):
-        self._timer_pause()
-        self.timer_seconds = 25 * 60
-        if hasattr(self, "timer_label") and self.timer_label.winfo_exists():
-            self.timer_label.configure(text="25:00")
+        ctk.CTkLabel(
+            page,
+            text="Your revision queue is based on the schedule stored for each problem.",
+            font=ctk.CTkFont(FONT, 12),
+            text_color=COLORS["muted"],
+        ).grid(row=2, column=0, sticky="w", padx=30, pady=(0, 15))
 
-    def _timer_tick(self):
-        if not self.timer_running:
-            return
-        if self.timer_seconds <= 0:
-            self.timer_running = False
-            self.timer_label.configure(text="00:00")
-            messagebox.showinfo("Focus session complete", "Nice work. Take a short break.")
-            return
-        mins, secs = divmod(self.timer_seconds, 60)
-        self.timer_label.configure(text=f"{mins:02d}:{secs:02d}")
-        self.timer_seconds -= 1
-        self.timer_job = self.after(1000, self._timer_tick)
+        try:
+            due = backend.get_due_revisions()
+        except Exception as error:
+            self._show_error("Could not load revisions", error)
+            due = []
 
-    # ───────────────────────────── REVISION ───────────────────────────────
+        summary = ctk.CTkFrame(
+            page,
+            fg_color=COLORS["surface"],
+            corner_radius=12,
+        )
+        summary.grid(row=3, column=0, sticky="ew", padx=30, pady=7)
 
-    def _revision_page(self):
-        outer = ctk.CTkFrame(self.content, fg_color="transparent")
-        outer.grid(row=0, column=0, sticky="nsew")
-        outer.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(outer, text="Turn solved problems into lasting knowledge.",
-                     font=(FONT, 13), text_color=C["muted"]).pack(anchor="w", pady=(0, 15))
-        rows = [p for p in self.all_problems if normalize_status(value(p, "status")) == "Revision"]
-        if not rows:
-            panel = card(outer)
-            panel.pack(fill="x")
-            self._empty(panel, "Your revision queue is clear.", "Mark a problem as Revision when you want to revisit it.")
-        else:
-            for p in rows:
-                self._problem_row(outer, p, actions=True)
+        ctk.CTkLabel(
+            summary,
+            text=f"{len(due)} problems due for revision",
+            font=ctk.CTkFont(FONT, 16, "bold"),
+            text_color=COLORS["purple"],
+        ).pack(anchor="w", padx=18, pady=16)
 
-    # ───────────────────────────── ANALYTICS ──────────────────────────────
+        for row_index, problem in enumerate(due, start=4):
+            self._revision_card(page, problem, row_index)
 
-    def _analytics_page(self):
-        outer = ctk.CTkScrollableFrame(self.content, fg_color="transparent")
-        outer.grid(row=0, column=0, sticky="nsew")
-        outer.grid_columnconfigure((0, 1), weight=1)
+        if not due:
+            empty = ctk.CTkFrame(
+                page,
+                fg_color=COLORS["surface"],
+                corner_radius=12,
+            )
+            empty.grid(row=4, column=0, sticky="ew", padx=30, pady=10)
 
-        ctk.CTkLabel(outer, text="Understand your patterns, not just your numbers.",
-                     font=(FONT, 13), text_color=C["muted"]).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 15))
-        self._chart_card(outer, 1, 0, "TOPIC DISTRIBUTION", self.db.topic_stats(), "topic")
-        self._chart_card(outer, 1, 1, "DIFFICULTY BREAKDOWN", self.db.difficulty_stats(), "difficulty")
-        self._chart_card(outer, 2, 0, "LAST 30 DAYS", self.db.last_30(), "trend", span=2)
+            ctk.CTkLabel(
+                empty,
+                text="You're all caught up!",
+                font=ctk.CTkFont(FONT, 17, "bold"),
+                text_color=COLORS["green"],
+            ).pack(pady=(24, 5))
 
-        insight_card = card(outer)
-        insight_card.grid(row=3, column=0, columnspan=2, sticky="ew", pady=8)
-        ctk.CTkLabel(insight_card, text="LEARNING INSIGHTS", font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=17, pady=(15, 8))
-        insights = self.db.insights()
-        if not insights:
-            ctk.CTkLabel(insight_card, text="Keep logging your practice. Your insights will appear here.",
-                         font=(FONT, 11), text_color=C["muted"]).pack(anchor="w", padx=17, pady=(0, 15))
-        else:
-            for item in insights[:6] if isinstance(insights, (list, tuple)) else [insights]:
-                ctk.CTkLabel(insight_card, text=f"•  {item}", font=(FONT, 11),
-                             text_color=C["text"], wraplength=800, justify="left").pack(anchor="w", padx=17, pady=3)
-            ctk.CTkFrame(insight_card, height=10, fg_color="transparent").pack()
+            ctk.CTkLabel(
+                empty,
+                text="When you schedule a revision, it will appear here when due.",
+                font=ctk.CTkFont(FONT, 12),
+                text_color=COLORS["muted"],
+            ).pack(pady=(0, 24))
 
-    def _chart_card(self, parent, row, col, title, data, kind, span=1):
-        panel = card(parent)
-        panel.grid(row=row, column=col, columnspan=span, sticky="nsew",
-                   padx=(0, 7) if col == 0 else (7, 0), pady=7)
-        ctk.CTkLabel(panel, text=title, font=(FONT, 10, "bold"),
-                     text_color=C["dim"]).pack(anchor="w", padx=16, pady=(15, 5))
-        if not data:
-            ctk.CTkLabel(panel, text="Not enough data yet.",
-                         font=(FONT, 11), text_color=C["muted"]).pack(padx=16, pady=35)
-            return
-        if not MATPLOTLIB_AVAILABLE:
-            ctk.CTkLabel(panel, text=str(data), text_color=C["muted"]).pack(padx=16, pady=20)
-            return
-        labels, vals = self._series(data, ("topic", "difficulty", "date", "day", "label", "name"),
-                                    ("count", "solved", "total", "value"))
-        if not labels or not vals:
-            ctk.CTkLabel(panel, text="Data format not recognized. Check backend return values.",
-                         text_color=C["muted"], wraplength=300).pack(padx=16, pady=25)
-            return
-        width = 5.0 if span == 2 else 3.2
-        fig = Figure(figsize=(width, 2.15), dpi=100, facecolor=C["panel"])
-        ax = fig.add_subplot(111)
-        ax.set_facecolor(C["panel"])
-        if kind == "trend":
-            ax.plot(range(len(vals)), vals, color=C["green"], linewidth=2.2, marker="o", markersize=4)
-            ax.fill_between(range(len(vals)), vals, color=C["green"], alpha=.12)
-            ax.set_xticks(range(len(labels)))
-            ax.set_xticklabels([str(x)[-5:] for x in labels], fontsize=7, color=C["sage"], rotation=0)
-        else:
-            ax.barh(range(len(vals)), vals, color=C["green"], alpha=.85, height=.58)
-            ax.set_yticks(range(len(labels)))
-            ax.set_yticklabels([str(x)[:16] for x in labels], fontsize=8, color=C["sage"])
-            ax.invert_yaxis()
-            ax.tick_params(axis="x", labelbottom=False, bottom=False)
-        ax.tick_params(axis="y", length=0)
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        ax.grid(axis="x" if kind != "trend" else "y", color=C["border"], linewidth=.6)
-        ax.set_axisbelow(True)
-        fig.tight_layout(pad=1.1)
-        canvas = FigureCanvasTkAgg(fig, master=panel)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self._refresh_sidebar()
 
-    def _series(self, data, label_keys, value_keys):
-        labels, vals = [], []
-        if isinstance(data, dict):
-            # Some backends return {label: count}.
-            labels = list(data.keys())
-            vals = [safe_int(v) for v in data.values()]
-            return labels, vals
-        if not isinstance(data, (list, tuple)):
-            return [], []
-        for item in data:
-            if isinstance(item, (int, float)):
-                labels.append(str(len(labels) + 1))
-                vals.append(safe_int(item))
-                continue
+    def _revision_card(self, parent, problem, row_index):
+        card = ctk.CTkFrame(
+            parent,
+            fg_color=COLORS["surface"],
+            corner_radius=12,
+            border_width=1,
+            border_color=COLORS["border"],
+        )
+        card.grid(
+            row=row_index,
+            column=0,
+            sticky="ew",
+            padx=30,
+            pady=6,
+        )
+        card.grid_columnconfigure(0, weight=1)
 
-            # database.py returns tuples:
-            # stats_by_topic/difficulty -> (label, count)
-            # get_last_30_days_data -> (ISO date, count, day_number)
-            if isinstance(item, (list, tuple)):
-                if len(item) >= 2:
-                    lab, val = item[0], item[1]
-                    labels.append(str(lab))
-                    vals.append(safe_int(val))
-                continue
+        ctk.CTkLabel(
+            card,
+            text=problem["problem_name"],
+            font=ctk.CTkFont(FONT, 14, "bold"),
+            text_color=COLORS["text"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(13, 2))
 
-            lab = value(item, *label_keys, default=None)
-            val = value(item, *value_keys, default=None)
-            if lab is not None and val is not None:
-                labels.append(str(lab))
-                vals.append(safe_int(val))
-        return labels, vals
+        ctk.CTkLabel(
+            card,
+            text=f"{problem['topic']}  •  {problem['difficulty']}  •  "
+                 f"Revision {problem.get('revision_count', 0)}",
+            font=ctk.CTkFont(FONT, 11),
+            text_color=COLORS["muted"],
+        ).grid(row=1, column=0, sticky="w", padx=16, pady=(0, 13))
 
-    # ───────────────────────────── SETTINGS / EMPTY ───────────────────────
+        ctk.CTkButton(
+            card,
+            text="Mark reviewed",
+            width=125,
+            height=32,
+            fg_color=COLORS["blue_dark"],
+            command=lambda p=problem: self._mark_reviewed(p),
+        ).grid(row=0, column=1, rowspan=2, padx=16)
 
-    def _settings_page(self):
-        panel = card(self.content)
-        panel.grid(row=0, column=0, sticky="new")
-        ctk.CTkLabel(panel, text="Workspace preferences", font=(FONT, 17, "bold"),
-                     text_color=C["text"]).pack(anchor="w", padx=20, pady=(20, 8))
-        ctk.CTkLabel(panel, text="AlgoTrack Midnight Edition · Dark theme",
-                     font=(FONT, 12), text_color=C["muted"]).pack(anchor="w", padx=20, pady=(0, 5))
-        ctk.CTkLabel(panel, text=f"Database module: {BACKEND_MODULE}",
-                     font=(FONT, 11), text_color=C["dim"]).pack(anchor="w", padx=20, pady=(0, 20))
-        ctk.CTkButton(panel, text="Refresh data", width=120, height=35,
-                      fg_color=C["panel_3"], hover_color="#302A50",
-                      text_color=C["green"], command=self.refresh_data).pack(anchor="w", padx=20, pady=(0, 20))
+    def _mark_reviewed(self, problem):
+        try:
+            success = backend.record_revision(problem["problem_id"])
 
-    def _empty(self, parent, title, subtitle):
-        ctk.CTkLabel(parent, text="✧", font=(FONT, 28), text_color=C["green"]).pack(pady=(20, 3))
-        ctk.CTkLabel(parent, text=title, font=(FONT, 13, "bold"),
-                     text_color=C["text"]).pack()
-        ctk.CTkLabel(parent, text=subtitle, font=(FONT, 10),
-                     text_color=C["muted"]).pack(pady=(4, 18))
+            if success:
+                messagebox.showinfo(
+                    "Revision saved",
+                    "Revision recorded. Your next review has been scheduled.",
+                )
 
+            self.show_revisions()
+
+        except Exception as error:
+            self._show_error("Could not record revision", error)
+
+
+# APPLICATION ENTRY POINT
 
 if __name__ == "__main__":
     app = AlgoTrackApp()
-    if app.winfo_exists():
-        app.mainloop()
+    app.mainloop()
