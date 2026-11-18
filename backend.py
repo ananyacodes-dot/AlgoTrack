@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -8,8 +9,20 @@ from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import urlparse
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "algotrack.db"
+# ============================================================
+# PERMANENT DATABASE LOCATION
+# ============================================================
+
+# PyInstaller --onefile extracts bundled files into a temporary
+# _MEI... directory. Never store the database beside __file__.
+# LOCALAPPDATA is a persistent Windows user-data directory.
+APP_DATA_DIR = Path(
+    os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+) / "AlgoTrack"
+
+APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DB_PATH = APP_DATA_DIR / "algotrack.db"
 
 VALID_STATUSES = {"Todo", "Solved", "Revision"}
 VALID_DIFFICULTIES = {"Easy", "Medium", "Hard"}
@@ -708,4 +721,3 @@ if __name__ == "__main__":
     print(get_database_info())
     print("Dashboard:", get_dashboard_stats())
     print("Goals:", get_goals())
-
