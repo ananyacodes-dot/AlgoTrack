@@ -1,88 +1,270 @@
-AlgoTrack 🚀
+# AlgoTrack 🚀
+### Your Personal DSA Productivity & Progress Tracking System
 
-Your Personal Data Structures & Algorithms Tracking System
-AlgoTrack is a Python-based desktop application designed to help developers organize their Data Structures and Algorithms (DSA) learning journey, track problem-solving progress, monitor consistency, and identify areas for improvement.
-Built with Python, CustomTkinter, SQLite, and Matplotlib, AlgoTrack combines problem management with productivity tracking in a desktop interface.
+**Track. Solve. Analyze. Improve.**
 
-Features
+AlgoTrack is a desktop-based Data Structures and Algorithms (DSA) tracking application designed to help developers organize their problem-solving journey, monitor consistency, identify weak topics, and improve their coding skills through data-driven insights.
 
-Problem Management: Add and organize DSA problems.
-Topic Tracking: Categorize problems by topic and pattern.
-Difficulty Classification: Track problems by difficulty level.
-Progress Tracking: Mark problems as solved and record solving dates.
-Streak Tracking: Monitor consistency in problem-solving.
-Productivity Analytics: Visualize problem-solving activity over the last 30 days.
-Weak Topic Identification: Identify topics that need more practice.
-Local Database: Store problem records using SQLite.
+Instead of simply maintaining a list of solved problems, AlgoTrack provides a centralized workspace to manage problems, track revision progress, visualize performance, and build consistent problem-solving habits.
 
-🛠️ Tech Stack
+---
+
+## ✨ Features
+
+### 1. 📊 Interactive Dashboard
+- Overall DSA progress at a glance.
+- Total problems tracked.
+- Solved and pending problem counts.
+- Current solving streak.
+- Daily solving activity.
+- Quick access to add new problems.
+
+### 2. 📝 Problem Management
+- Add new DSA problems.
+- Edit existing problem details.
+- Delete problems.
+- Store problem names and links.
+- Categorize problems by topic.
+- Track difficulty: Easy, Medium, Hard.
+- Maintain problem-solving patterns and personal notes.
+- Track problem status: Todo, Solved, Revision.
+- Search and filter problems by topic, difficulty, status, and keywords.
+
+### 3. 📈 Analytics & Visualization
+- Visualize daily problem-solving activity.
+- Analyze solved problems by topic.
+- Track progress over time.
+- Identify areas that need more practice.
+- View difficulty-based performance statistics.
+
+### 4. 🔥 Streak Tracker
+- Track consecutive days of problem-solving.
+- Monitor daily solving activity.
+- Encourage consistency through progress tracking.
+
+### 5. 🔄 Revision Management
+- Organize problems that require revision.
+- Maintain a dedicated revision workspace.
+- Keep previously solved problems accessible for practice.
+
+### 6. 🎯 Goal Tracking
+- Set and monitor DSA practice goals.
+- Track progress toward daily targets.
+- Monitor goal completion.
+
+### 7. 📅 Contribution Calendar
+- GitHub-style activity visualization.
+- Displays problem-solving activity over the last 30 days.
+- Highlights active and inactive days.
+
+### 8. 🧠 Smart Insights
+- Generate insights from problem-solving activity.
+- Identify performance patterns.
+- Highlight areas requiring improvement.
+- Provide recommendations for the next week's focus.
+
+---
+
+## 🛠️ Tech Stack
 
 | Technology | Purpose |
-| Python | Core programming language |
-| CustomTkinter | Desktop GUI |
-| SQLite | Database management |
-| Matplotlib | Data visualization |
-📂 Project Structure
+|---|---|
+| Python | Core application logic |
+| CustomTkinter | Modern desktop GUI |
+| SQLite | Local database management |
+| Matplotlib | Data visualization and charts |
+| Tkinter | Native desktop functionality |
 
+---
 
+## 🏗️ Project Architecture
+
+AlgoTrack follows a modular architecture that separates the user interface from database operations.
+
+```text
+              USER
+                |
+                v
+       +------------------+
+       |   CustomTkinter  |
+       |   Frontend       |
+       +------------------+
+                |
+                v
+       +------------------+
+       |   Backend Logic  |
+       |   Python         |
+       +------------------+
+                |
+                v
+       +------------------+
+       |   SQLite Database|
+       |   algotrack.db   |
+       +------------------+
+                |
+                v
+       +------------------+
+       | Data & Statistics|
+       +------------------+
+                |
+                v
+       +------------------+
+       |    Matplotlib    |
+       | Charts & Insights|
+       +------------------+
+```
+
+### Architecture Principles
+- Separation of concerns.
+- Modular code organization.
+- Persistent local data storage.
+- Reusable backend functions.
+- Data-driven dashboard rendering.
+
+---
+
+## 📂 Project Structure
+
+```text
 AlgoTrack/
 │
-├── frontend.py
 ├── backend.py
+│
+├── frontend.py
+│
 ├── requirements.txt
-├── README.md
+│
 ├── .gitignore
 │
-└── screenshots/
+└── algotrack.db
+```
 
-⚙️ Installation & Setup
+**Note:** The SQLite database is initialized automatically by the application. The database file is generated locally when the application runs.
 
-1. Clone the repository
+---
 
+## ⚙️ Installation & Setup
+
+### Prerequisites
+- Python 3.10 or later recommended.
+- Git.
+- pip.
+
+### Step 1: Clone the repository
+
+```bash
 git clone https://github.com/ananyacodes-dot/AlgoTrack.git
+```
 
+### Step 2: Navigate to the project directory
 
-2. Navigate to the project directory
-
+```bash
 cd AlgoTrack
+```
 
+### Step 3: Create a virtual environment
 
-3. Install dependencies
+```bash
+python -m venv venv
+```
 
+Activate it:
+
+**Windows**
+```bash
+venv\Scripts\activate
+```
+
+**macOS / Linux**
+```bash
+source venv/bin/activate
+```
+
+### Step 4: Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
 
+Alternatively:
 
-4. Run the application
+```bash
+pip install customtkinter matplotlib
+```
 
+### Step 5: Run the application
+
+```bash
 python frontend.py
+```
 
+The application will initialize its SQLite database and launch the AlgoTrack desktop interface.
 
-Make sure Python is installed on your system before running the application.
+*If your frontend file has a different name, use that filename in the command.*
 
-📊 Screenshots
+---
 
+## 💾 Data Storage
 
+AlgoTrack uses SQLite for persistent local storage.
 
-🎯 Project Goals
+Problem records include:
 
-AlgoTrack aims to make DSA preparation more structured and measurable by helping developers:
+- Problem ID
+- Problem name
+- Problem link
+- Topic
+- Difficulty
+- Status
+- Date solved
+- Problem-solving pattern
+- Personal notes
 
-- Maintain a consistent problem-solving habit.
-- Organize problems by topic and pattern.
-- Track learning progress over time.
-- Recognize weaker areas.
-- Build a more disciplined approach to technical interview preparation.
+The database allows users to retain their problem-solving history between application sessions without requiring an external database server.
 
-🔮 Future Improvements
+---
 
-- LeetCode integration.
-- Advanced performance analytics.
-- More detailed learning statistics.
-- Improved problem recommendation system.
-- Additional productivity features.
+## 🎯 Project Goals
 
-👩‍💻 Author
+AlgoTrack was built to explore and implement practical software engineering concepts, including:
 
-Ananya Barik
+- Desktop application development.
+- Database design and CRUD operations.
+- Backend and frontend separation.
+- SQL queries and data aggregation.
+- Data visualization.
+- Application state management.
+- Analytical problem-solving.
+- Building maintainable software.
+
+---
+
+## 🚀 Future Improvements
+
+Potential enhancements for future versions:
+
+- Spaced repetition-based revision scheduling.
+- LeetCode API integration, where supported.
+- Cloud synchronization and user authentication.
+- Exportable progress reports.
+- More advanced performance analytics.
+- Customizable daily and weekly goals.
+- Packaging and distribution as a standalone desktop application.
+
+---
+
+## 👩‍💻 Author
+
+**Ananya Barik**
+
+Computer Science Undergraduate | Aspiring Software Engineer
 
 GitHub: [@ananyacodes-dot](https://github.com/ananyacodes-dot)
+
+---
+
+## ⭐ Support
+
+If you find AlgoTrack interesting, consider starring the repository!
+
+**AlgoTrack — Consistency is the algorithm behind progress.**
