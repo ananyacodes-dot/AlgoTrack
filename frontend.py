@@ -1,4 +1,5 @@
 import json
+import os
 import tkinter as tk
 import webbrowser
 from datetime import date, datetime, timedelta
@@ -50,7 +51,7 @@ CHART_DIFF = {"Easy": "#34c17b", "Medium": "#f0b84d", "Hard": "#f26b6b"}
 PALETTE = ["#6b8afd", "#34c17b", "#f0b84d", "#e86f8c", "#4db3f0", "#5c6378"]
 
 DEFAULT_TOPICS = [
-    "Array", "String", "Hashing", "Two Pointers", "Sliding Window",
+    "Arrays", "String", "Hashing", "Two Pointers", "Sliding Window",
     "Binary Search", "Sorting", "Linked List", "Stack", "Queue", "Heap",
     "Recursion", "Backtracking", "Tree", "Graph", "Greedy", "DP",
     "Bit Manipulation", "Math",
@@ -69,32 +70,63 @@ COMBO = dict(height=36, fg_color=INPUT_BG, border_color=INPUT_BORDER, border_wid
              dropdown_fg_color=CARD, dropdown_text_color=TEXT,
              dropdown_hover_color=ACCENT_SOFT)
 
-SETTINGS_FILE = Path(__file__).with_name("settings.json")
+APP_DATA_DIR = Path(
+    os.environ.get(
+        "LOCALAPPDATA",
+        str(Path.home() / "AppData" / "Local")
+    )
+) / "AlgoTrack"
+
+APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+SETTINGS_FILE = APP_DATA_DIR / "settings.json"
+
+LEGACY_SETTINGS_FILE = Path(__file__).with_name("settings.json")
 
 
-# ------------------------------------------------------------------
-# Settings (name + daily goal, stored in settings.json)
-# ------------------------------------------------------------------
 def load_settings():
-    defaults = {"name": "", "daily_goal": 5, "weekly_goal": 7, "monthly_goal": 30}
+    defaults = {
+        "name": "",
+        "daily_goal": 5,
+        "weekly_goal": 7,
+        "monthly_goal": 30,
+    }
     data = dict(defaults)
+
+    source = SETTINGS_FILE
+    if not SETTINGS_FILE.exists() and LEGACY_SETTINGS_FILE.exists():
+        source = LEGACY_SETTINGS_FILE
+
     try:
-        data.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
-    except Exception:
+        loaded = json.loads(source.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            data.update(loaded)
+    except (OSError, json.JSONDecodeError, TypeError):
         pass
+
     for key in ("daily_goal", "weekly_goal", "monthly_goal"):
         try:
             data[key] = max(1, int(data[key]))
         except (TypeError, ValueError):
             data[key] = defaults[key]
+
+    if source != SETTINGS_FILE:
+        save_settings(data)
+
     return data
 
 
 def save_settings(data):
     try:
-        SETTINGS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        temp_file = SETTINGS_FILE.with_suffix(".tmp")
+        temp_file.write_text(
+            json.dumps(data, indent=2),
+            encoding="utf-8"
+        )
+
+        temp_file.replace(SETTINGS_FILE)
         return True
-    except OSError:
+    except (OSError, TypeError, ValueError):
         return False
 
 
@@ -163,10 +195,6 @@ def friendly_date(s):
 def clip(text, n):
     return text if len(text) <= n else text[: n - 1] + "\u2026"
 
-
-# ------------------------------------------------------------------
-# matplotlib helpers (light theme)
-# ------------------------------------------------------------------
 def new_figure(w, h):
     return Figure(figsize=(w, h), dpi=100, facecolor=CARD, layout="constrained")
 
@@ -402,6 +430,8 @@ class HomePage(ctk.CTkScrollableFrame):
         line.pack(anchor="w", padx=14)
         ctk.CTkLabel(line, text=f"{streak} day{'s' if streak != 1 else ''}",
                      font=font(20, True), text_color=TEXT).pack(side="left")
+        ctk.CTkLabel(line, text="🔥", font=ctk.CTkFont(family="Segoe UI Emoji", size=19),
+                     text_color=TEXT).pack(side="left", padx=(7, 0))
         ctk.CTkLabel(sc, text="Keep it up" if streak else "Solve one today to start",
                      text_color=MUTED).pack(anchor="w", padx=14, pady=(2, 14))
 
@@ -544,7 +574,7 @@ class HomePage(ctk.CTkScrollableFrame):
 
         canvas = embed(yearly_calendar_figure(solved), cc)
         widget = canvas.get_tk_widget()
-      
+
         cc.bind("<Configure>", lambda e: widget.configure(
             height=max(110, int((e.width - 24) / 5.1))))
 
@@ -877,7 +907,7 @@ class ProblemsPage(ctk.CTkFrame):
 
 
 # ------------------------------------------------------------------
-# Analytics (all charts are matplotlib)
+# Analytics
 # ------------------------------------------------------------------
 class AnalyticsPage(ctk.CTkScrollableFrame):
     RANGES = {"Last 7 Days": 7, "Last 14 Days": 14, "Last 30 Days": 30}
@@ -1410,3 +1440,4 @@ if __name__ == "__main__":
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
     App().mainloop()
+
